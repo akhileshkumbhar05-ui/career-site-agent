@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+pydantic-settings
+python-dotenv
+httpx
+jinja2
+streamlit
+pytest
+pytest-cov
+beautifulsoup4
