@@ -1,0 +1,10 @@
+Subject: Interest in {{ title }} at {{ company }}
+
+Hi {{ recruiter_name }},
+
+I recently came across the {{ title }} role at {{ company }} and wanted to reach out.
+My background includes applied machine learning, analytics, and deployment-focused AI systems.
+I would value the opportunity to learn more about what the team is looking for in strong candidates.
+
+Best regards,
+Akhilesh Kumbhar

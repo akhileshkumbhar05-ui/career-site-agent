@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tailored Resume</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #222; }
+    h1, h2 { margin-bottom: 6px; }
+    ul { margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>{{ candidate.full_name }}</h1>
+  <p>{{ candidate.headline }}</p>
+  <p>{{ candidate.base_summary }}</p>
+
+  <h2>Selected Projects</h2>
+  {% for project in projects %}
+  <div>
+    <strong>{{ project.name }}</strong>
+    <ul>
+      {% for bullet in project.bullets %}
+      <li>{{ bullet }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</body>
+</html>
