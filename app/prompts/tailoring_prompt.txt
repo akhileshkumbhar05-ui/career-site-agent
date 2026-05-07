@@ -1,0 +1,3 @@
+Tailor the resume truthfully.
+Allowed actions: reorder, rewrite for clarity, emphasize relevant project evidence.
+Forbidden actions: invent skills, invent metrics, invent experience.

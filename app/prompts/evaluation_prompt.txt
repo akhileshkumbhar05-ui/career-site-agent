@@ -1,0 +1,2 @@
+Evaluate whether the generated score explanation matches the underlying structured evidence.
+Flag unsupported claims.
