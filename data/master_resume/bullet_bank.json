@@ -1,0 +1,10 @@
+{
+  "deployment": [
+    "Optimized model and pipeline behavior for constrained deployment environments.",
+    "Built user-facing interfaces around inference workflows."
+  ],
+  "analytics": [
+    "Translated technical outputs into decision-support insights.",
+    "Used evaluation metrics to guide practical model selection."
+  ]
+}

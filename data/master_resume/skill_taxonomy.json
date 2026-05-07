@@ -1,0 +1,172 @@
+{
+  "python": [
+    "python"
+  ],
+  "sql": [
+    "sql",
+    "mysql",
+    "postgresql",
+    "postgres"
+  ],
+  "java": [
+    "java"
+  ],
+  "matlab": [
+    "matlab"
+  ],
+  "machine learning": [
+    "ml",
+    "machine learning",
+    "machine-learning"
+  ],
+  "deep learning": [
+    "deep learning",
+    "deep-learning",
+    "neural networks",
+    "neural network"
+  ],
+  "llm": [
+    "llm",
+    "llms",
+    "large language model",
+    "large language models",
+    "language model",
+    "language models"
+  ],
+  "rag": [
+    "rag",
+    "retrieval augmented generation",
+    "retrieval-augmented generation"
+  ],
+  "nlp": [
+    "nlp",
+    "natural language processing"
+  ],
+  "computer vision": [
+    "computer vision",
+    "cv",
+    "object detection",
+    "image classification",
+    "vision"
+  ],
+  "forecasting": [
+    "forecasting",
+    "time series",
+    "time-series",
+    "time series forecasting",
+    "prophet"
+  ],
+  "recommender systems": [
+    "recommender system",
+    "recommender systems",
+    "recommendation engine",
+    "recommendation system",
+    "personalization"
+  ],
+  "statistics": [
+    "statistics",
+    "statistical modeling"
+  ],
+  "pandas": [
+    "pandas"
+  ],
+  "numpy": [
+    "numpy"
+  ],
+  "scikit learn": [
+    "scikit learn",
+    "scikit-learn",
+    "sklearn"
+  ],
+  "pytorch": [
+    "pytorch",
+    "torch"
+  ],
+  "tensorflow": [
+    "tensorflow",
+    "tf",
+    "keras"
+  ],
+  "fastapi": [
+    "fastapi"
+  ],
+  "streamlit": [
+    "streamlit"
+  ],
+  "aws": [
+    "aws",
+    "aws ec2",
+    "amazon web services",
+    "ec2"
+  ],
+  "docker": [
+    "docker",
+    "containerization",
+    "containers"
+  ],
+  "api development": [
+    "api",
+    "apis",
+    "rest api",
+    "rest apis",
+    "api development",
+    "backend api"
+  ],
+  "power bi": [
+    "power bi",
+    "powerbi"
+  ],
+  "selenium": [
+    "selenium",
+    "web scraping",
+    "browser automation"
+  ],
+  "opencv": [
+    "opencv"
+  ],
+  "bytetrack": [
+    "bytetrack"
+  ],
+  "langchain": [
+    "langchain"
+  ],
+  "sentence transformers": [
+    "sentence transformers",
+    "sentence-transformers"
+  ],
+  "deployment": [
+    "deployment",
+    "deployed",
+    "production",
+    "production ready",
+    "production-ready",
+    "cloud deployment"
+  ],
+  "analytics": [
+    "analytics",
+    "analysis",
+    "business intelligence",
+    "bi"
+  ],
+  "data pipelines": [
+    "data pipeline",
+    "data pipelines",
+    "pipeline",
+    "pipelines",
+    "etl"
+  ],
+  "model evaluation": [
+    "model evaluation",
+    "evaluation",
+    "benchmarking",
+    "validation"
+  ],
+  "prompt engineering": [
+    "prompt engineering",
+    "prompt design"
+  ],
+  "human in the loop": [
+    "human in the loop",
+    "human-in-the-loop"
+  ]
+}

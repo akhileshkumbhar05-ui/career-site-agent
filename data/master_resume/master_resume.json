@@ -1,0 +1,196 @@
+{
+  "candidate": {
+    "full_name": "Akhilesh A. Kumbhar",
+    "location": "Arlington, TX",
+    "email": "akhileshkumbhar0405@gmail.com",
+    "phone": "+1(346)592-3971",
+    "headline": "Data Scientist and Machine Learning Engineer",
+    "base_summary": "Data Scientist and Machine Learning Engineer with 1+ years of experience building end-to-end ML systems, from data modeling and experimentation to scalable cloud-based inference. Delivered production-ready solutions across recommender systems, RAG-based analytics, time-series forecasting, and computer vision, with a strong focus on performance, latency optimization, and real-world impact. Skilled in translating complex data into interpretable insights that drive measurable business outcomes."
+  },
+  "summary_variants": {
+    "data_scientist": "Data Scientist with 1+ years of experience building end-to-end machine learning and analytics solutions across recommender systems, forecasting, healthcare data, and decision-support applications.",
+    "ml_engineer": "Machine Learning Engineer with 1+ years of experience building and deploying end-to-end ML systems across recommender systems, computer vision, forecasting, and cloud-based inference.",
+    "ai_engineer": "AI Engineer with experience building applied AI systems spanning RAG-based analytics, recommendation engines, forecasting pipelines, and computer vision applications."
+  },
+  "education": [
+    {
+      "degree": "Master of Science in Data Science",
+      "institution": "University of Texas at Arlington",
+      "expected_graduation": "May 2026",
+      "gpa": "3.89"
+    },
+    {
+      "degree": "Bachelor of Engineering in Electronics and Communications",
+      "institution": "KLE Technological University",
+      "gpa": "7.56"
+    }
+  ],
+  "skills": {
+    "programming_languages": [
+      "Python",
+      "SQL",
+      "Java",
+      "MATLAB",
+      "HTML",
+      "CSS"
+    ],
+    "machine_learning_and_ai": [
+      "Scikit-learn",
+      "NumPy",
+      "Pandas",
+      "PyTorch",
+      "TensorFlow",
+      "Time Series Forecasting",
+      "Computer Vision",
+      "Recommender Systems",
+      "RAG",
+      "Prompt Engineering",
+      "LangChain"
+    ],
+    "data_visualization": [
+      "Power BI"
+    ],
+    "databases": [
+      "SQL",
+      "MySQL"
+    ],
+    "cloud": [
+      "AWS EC2",
+      "Docker"
+    ],
+    "tools": [
+      "BeautifulSoup",
+      "Selenium",
+      "Streamlit",
+      "OpenCV",
+      "ByteTrack",
+      "Prophet",
+      "SentenceTransformers"
+    ],
+    "ai_tools": [
+      "ChatGPT",
+      "Llama"
+    ]
+  },
+  "projects": [
+    {
+      "id": "otto_recommender",
+      "name": "OTTO Session-Based Recommender System",
+      "tags": [
+        "recommender_systems",
+        "ranking",
+        "feature_engineering",
+        "streamlit",
+        "deployment",
+        "inference_optimization"
+      ],
+      "tech_stack": [
+        "Python",
+        "Pandas",
+        "Scikit-learn",
+        "Streamlit"
+      ],
+      "bullets": [
+        "Built a two-stage recommendation pipeline for next-item interaction prediction.",
+        "Engineered behavioral features for low-latency inference.",
+        "Deployed a Streamlit UI on Hugging Face Spaces."
+      ]
+    },
+    {
+      "id": "erev_copilot",
+      "name": "EREV Copilot - EV Range Analytics RAG Dashboard",
+      "tags": [
+        "rag",
+        "llm",
+        "retrieval",
+        "analytics",
+        "streamlit",
+        "aws",
+        "deployment",
+        "latency_optimization",
+        "decision_support"
+      ],
+      "tech_stack": [
+        "RAG",
+        "Llama",
+        "SentenceTransformers",
+        "Streamlit",
+        "AWS EC2"
+      ],
+      "bullets": [
+        "Developed retrieval-augmented analytics over EV-VMT reports.",
+        "Optimized chunking, embeddings, and prompt design for CPU-only deployment.",
+        "Built a multi-tab dashboard for scenario analysis."
+      ]
+    },
+    {
+      "id": "traffic_analysis_tta",
+      "name": "Vehicle Corridor Traffic Analysis with Test-Time Domain Adaptation",
+      "tags": [
+        "computer_vision",
+        "object_detection",
+        "tracking",
+        "domain_adaptation",
+        "edge_ai",
+        "latency",
+        "deployment_evaluation"
+      ],
+      "tech_stack": [
+        "YOLOv8n",
+        "ByteTrack",
+        "PyTorch",
+        "OpenCV"
+      ],
+      "bullets": [
+        "Fine-tuned YOLOv8n on VisDrone.",
+        "Built an end-to-end traffic analytics pipeline.",
+        "Evaluated GPU and CPU deployment performance."
+      ]
+    },
+    {
+      "id": "cocoa_leaf_disease",
+      "name": "Cocoa Leaf Disease Detection using Deep Learning",
+      "tags": [
+        "computer_vision",
+        "deep_learning",
+        "semi_supervised_learning",
+        "streamlit",
+        "diagnostic_ai",
+        "mobile_inference"
+      ],
+      "tech_stack": [
+        "TensorFlow",
+        "Keras",
+        "EfficientNet-B0",
+        "Streamlit"
+      ],
+      "bullets": [
+        "Built a disease classification pipeline with pseudo-labeling.",
+        "Developed a real-time diagnostic web app.",
+        "Optimized inference for low-resource environments."
+      ]
+    },
+    {
+      "id": "water_usage_forecasting",
+      "name": "Water Usage Forecasting with Time-Series Modeling",
+      "tags": [
+        "time_series",
+        "forecasting",
+        "model_selection",
+        "aws",
+        "deployment",
+        "evaluation"
+      ],
+      "tech_stack": [
+        "Prophet",
+        "Scikit-learn",
+        "AWS EC2"
+      ],
+      "bullets": [
+        "Implemented a forecasting workflow with validation and diagnostics.",
+        "Selected a stable production model.",
+        "Deployed on EC2 for on-demand inference."
+      ]
+    }
+  ]
+}

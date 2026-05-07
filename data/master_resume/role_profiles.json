@@ -1,0 +1,163 @@
+{
+  "data_scientist": {
+    "display_name": "Data Scientist",
+    "title_aliases": [
+      "data scientist",
+      "applied scientist",
+      "decision scientist",
+      "research scientist",
+      "analytics scientist"
+    ],
+    "priority_tags": [
+      "analytics",
+      "forecasting",
+      "statistics",
+      "experimentation",
+      "evaluation",
+      "decision_support",
+      "business_intelligence",
+      "model_selection",
+      "time_series"
+    ],
+    "priority_skills": [
+      "python",
+      "sql",
+      "machine learning",
+      "statistics",
+      "forecasting",
+      "pandas",
+      "numpy",
+      "scikit learn",
+      "analytics",
+      "model evaluation"
+    ],
+    "preferred_skills": [
+      "power bi",
+      "api development",
+      "aws",
+      "deployment"
+    ],
+    "summary_variant_key": "data_scientist",
+    "project_priority_rules": {
+      "prefer_tags": [
+        "analytics",
+        "forecasting",
+        "evaluation",
+        "decision_support",
+        "time_series"
+      ],
+      "avoid_if_better_options_exist": [
+        "edge_ai"
+      ]
+    }
+  },
+  "ml_engineer": {
+    "display_name": "Machine Learning Engineer",
+    "title_aliases": [
+      "machine learning engineer",
+      "ml engineer",
+      "applied ml engineer",
+      "computer vision engineer",
+      "research engineer"
+    ],
+    "priority_tags": [
+      "deployment",
+      "latency",
+      "evaluation",
+      "inference_optimization",
+      "model_selection",
+      "computer_vision",
+      "deep_learning",
+      "edge_ai",
+      "deployment_evaluation"
+    ],
+    "priority_skills": [
+      "python",
+      "machine learning",
+      "deep learning",
+      "pytorch",
+      "tensorflow",
+      "scikit learn",
+      "aws",
+      "fastapi",
+      "docker",
+      "computer vision",
+      "model evaluation",
+      "deployment"
+    ],
+    "preferred_skills": [
+      "opencv",
+      "bytetrack",
+      "streamlit",
+      "api development"
+    ],
+    "summary_variant_key": "ml_engineer",
+    "project_priority_rules": {
+      "prefer_tags": [
+        "deployment",
+        "latency",
+        "evaluation",
+        "computer_vision",
+        "deep_learning",
+        "inference_optimization"
+      ],
+      "avoid_if_better_options_exist": [
+        "business_intelligence"
+      ]
+    }
+  },
+  "ai_engineer": {
+    "display_name": "AI Engineer",
+    "title_aliases": [
+      "ai engineer",
+      "artificial intelligence engineer",
+      "llm engineer",
+      "genai engineer",
+      "applied ai engineer"
+    ],
+    "priority_tags": [
+      "rag",
+      "llm",
+      "retrieval",
+      "deployment",
+      "latency_optimization",
+      "decision_support",
+      "workflow_automation",
+      "analytics",
+      "tool_integration"
+    ],
+    "priority_skills": [
+      "python",
+      "llm",
+      "rag",
+      "nlp",
+      "fastapi",
+      "aws",
+      "streamlit",
+      "api development",
+      "deployment",
+      "prompt engineering",
+      "sentence transformers"
+    ],
+    "preferred_skills": [
+      "langchain",
+      "docker",
+      "analytics",
+      "human in the loop"
+    ],
+    "summary_variant_key": "ai_engineer",
+    "project_priority_rules": {
+      "prefer_tags": [
+        "rag",
+        "llm",
+        "retrieval",
+        "deployment",
+        "decision_support",
+        "latency_optimization"
+      ],
+      "avoid_if_better_options_exist": [
+        "business_intelligence"
+      ]
+    }
+  }
+}
