@@ -1,0 +1,18 @@
+[
+  {
+    "job_id": "ipsos_ds_7372",
+    "company": "Ipsos",
+    "title": "Data Scientist, Creative Excellence",
+    "jd_text": "Python, SQL, experimentation, machine learning, stakeholder communication...",
+    "discovered_url": "https://example.com/jobs/ipsos_ds_7372",
+    "source": "Jobright AI"
+  },
+  {
+    "job_id": "mtsi_ml_1133911787760",
+    "company": "Modern Technology Solutions Inc (MTSI)",
+    "title": "Entry-Level AI / Machine Learning Software Engineer",
+    "jd_text": "Python, machine learning, software engineering, data analysis, collaboration...",
+    "discovered_url": "https://example.com/jobs/mtsi_ml_1133911787760",
+    "source": "Jobright AI"
+  }
+]
