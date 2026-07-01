@@ -1,99 +1,174 @@
 {
   "candidate": {
-    "full_name": "Akhilesh A. Kumbhar",
+    "full_name": "Akhilesh Arunkumar Kumbhar",
     "location": "Arlington, TX",
     "email": "akhileshkumbhar0405@gmail.com",
-    "phone": "+1(346)592-3971",
-    "headline": "Data Scientist and Machine Learning Engineer",
-    "base_summary": "Data Scientist and Machine Learning Engineer with 1+ years of experience building end-to-end ML systems, from data modeling and experimentation to scalable cloud-based inference. Delivered production-ready solutions across recommender systems, RAG-based analytics, time-series forecasting, and computer vision, with a strong focus on performance, latency optimization, and real-world impact. Skilled in translating complex data into interpretable insights that drive measurable business outcomes."
+    "phone": "+1 (346) 592-3971",
+    "linkedin": "LinkedIn",
+    "linkedin_url": "https://www.linkedin.com/in/akhilesh-kumbhar-aak",
+    "github": "GitHub",
+    "github_url": "https://github.com/akhileshkumbhar05-ui",
+    "headline": "Data Scientist and AI Engineer",
+    "base_summary": "Data Scientist and AI Engineer with 1+ years of experience building end-to-end ML systems, RAG pipelines, agentic workflows, recommender engines, and production computer vision models. Delivered measurable results including about 70% top-N recommendation accuracy, 99.2% disease-classification accuracy, and mAP50 of 0.4052 on edge object detection. MS Data Science graduate from UT Arlington with 3.9 GPA and co-author of a peer-reviewed Energies publication.",
+    "work_authorization": {
+      "current_status": "F1 OPT",
+      "authorized_to_work_in_us_now": true,
+      "opt_valid_until": "2027-06-21",
+      "stem_opt_extension_available_months": 24,
+      "requires_current_sponsorship": false,
+      "requires_future_h1b_sponsorship": true,
+      "avoid_roles_requiring_us_citizenship": true,
+      "avoid_roles_requiring_security_clearance": true
+    },
+    "resume_storage_root": "D:\\Educational Documents\\Resumes",
+    "base_resume_pdf": "D:\\Resume Revamp Projects\\AgenticAI_Projects\\career-site-agent\\Profile\\Akhilesh_Kumbhar_Resume_May_24_2026.pdf"
   },
   "summary_variants": {
-    "data_scientist": "Data Scientist with 1+ years of experience building end-to-end machine learning and analytics solutions across recommender systems, forecasting, healthcare data, and decision-support applications.",
-    "ml_engineer": "Machine Learning Engineer with 1+ years of experience building and deploying end-to-end ML systems across recommender systems, computer vision, forecasting, and cloud-based inference.",
-    "ai_engineer": "AI Engineer with experience building applied AI systems spanning RAG-based analytics, recommendation engines, forecasting pipelines, and computer vision applications."
+    "data_scientist": "Data Scientist with 1+ years of experience building ML, analytics, forecasting, recommendation, and decision-support systems using Python, SQL, Scikit-learn, Pandas, NumPy, Power BI, and Streamlit, with verified results including about 70% top-N recommendation accuracy and over 90% model accuracy.",
+    "ml_engineer": "Machine Learning Engineer with 1+ years of experience building, evaluating, and deploying ML systems across recommender engines, computer vision, time-series forecasting, FastAPI services, Docker, and cloud-based inference, with verified results including about 70% top-N recommendation accuracy and 99.2% image-classification accuracy.",
+    "ai_engineer": "AI Engineer with experience building RAG pipelines, agentic workflows, skill-extraction APIs, LLM-powered decision systems, and production-oriented AI applications using Python, FastAPI, LangChain, n8n, and Streamlit, backed by about 70% top-N recommendation accuracy and peer-reviewed research.",
+    "data_analyst": "Data Analyst with 1+ years of experience turning operational and behavioral data into dashboards, model-backed insights, forecasting workflows, and business-ready analytics using Python, SQL, Power BI, Excel, Pandas, and Streamlit, with verified results including about 70% top-N recommendation accuracy and over 90% model accuracy.",
+    "business_analyst": "Business Analyst with technical analytics experience across 3-tier Power BI reporting, operational analysis, forecasting, stakeholder-facing documentation, and workflow improvement, with verified outcomes including about 70% top-N recommendation accuracy.",
+    "computer_vision_engineer": "Computer Vision Engineer with experience building object detection, tracking, domain adaptation, image classification, and low-resource inference systems using YOLO, ByteTrack, PyTorch, TensorFlow, Keras, and OpenCV, with verified results including mAP50 of 0.4052, precision of 0.5097, and 99.2% classification accuracy.",
+    "ai_software_engineer": "Software Engineer focused on AI and Python development, with experience building FastAPI services, RAG workflows, automation pipelines, Streamlit applications, Selenium tooling, and deployable ML systems, with verified results including about 70% top-N recommendation accuracy and GPU inference at 7.45 ms/frame."
   },
   "education": [
     {
       "degree": "Master of Science in Data Science",
       "institution": "University of Texas at Arlington",
-      "expected_graduation": "May 2026",
-      "gpa": "3.89"
+      "dates": "May 2026",
+      "gpa": "3.9"
     },
     {
       "degree": "Bachelor of Engineering in Electronics and Communications",
       "institution": "KLE Technological University",
-      "gpa": "7.56"
+      "dates": "2018 - 2022"
     }
   ],
   "skills": {
     "programming_languages": [
       "Python",
-      "SQL",
-      "Java",
-      "MATLAB",
-      "HTML",
-      "CSS"
+      "SQL"
     ],
     "machine_learning_and_ai": [
+      "Machine Learning",
+      "Deep Learning",
       "Scikit-learn",
-      "NumPy",
-      "Pandas",
       "PyTorch",
       "TensorFlow",
-      "Time Series Forecasting",
+      "EfficientNet-B0",
+      "YOLOv8",
+      "YOLOv5",
+      "VGG19",
       "Computer Vision",
       "Recommender Systems",
-      "RAG",
+      "Time Series Forecasting",
+      "Model Evaluation",
+      "Feature Engineering",
+      "SHAP"
+    ],
+    "generative_ai_and_llms": [
+      "RAG Pipelines",
+      "LangChain",
+      "Llama",
       "Prompt Engineering",
-      "LangChain"
-    ],
-    "data_visualization": [
-      "Power BI"
-    ],
-    "databases": [
-      "SQL",
-      "MySQL"
-    ],
-    "cloud": [
-      "AWS EC2",
-      "Docker"
-    ],
-    "tools": [
-      "BeautifulSoup",
-      "Selenium",
-      "Streamlit",
-      "OpenCV",
-      "ByteTrack",
-      "Prophet",
+      "Agentic Workflows",
+      "n8n",
       "SentenceTransformers"
     ],
-    "ai_tools": [
-      "ChatGPT",
-      "Llama"
+    "data_and_analytics": [
+      "Pandas",
+      "NumPy",
+      "Power BI",
+      "Streamlit",
+      "Matplotlib",
+      "Seaborn",
+      "MS Excel",
+      "Google Sheets"
+    ],
+    "cloud_and_deployment": [
+      "AWS EC2",
+      "Docker",
+      "FastAPI",
+      "Hugging Face Spaces"
+    ],
+    "automation_and_tools": [
+      "Selenium",
+      "OpenCV",
+      "ByteTrack",
+      "BeautifulSoup"
     ]
   },
+  "experience": [
+    {
+      "title": "AI & Data Science Engineer",
+      "company": "Borderless Healthcare Group - BH Mobile Pte Ltd",
+      "location": "India",
+      "dates": "Aug 2023 - May 2024",
+      "skills_used": [
+        "Python",
+        "Machine Learning",
+        "Recommender Systems",
+        "Power BI",
+        ".NET Core APIs",
+        "Operational Analytics",
+        "Healthcare Analytics"
+      ],
+      "bullets": [
+        "Achieved about 70% top-N relevance accuracy in healthcare service matching, as measured by recommender validation results, by building a hybrid SVD + k-NN engine over patient and service data.",
+        "Enabled secure, real-time operational reporting for healthcare service teams, as evidenced by Power BI dashboards integrated with .NET Core APIs, by designing 3-tier service data models.",
+        "Improved stakeholder understanding of applied AI workflows, as evidenced by 3 business-value case studies on healthcare analytics, vitals monitoring, and media automation, by translating technical implementations into decision-ready documentation."
+      ]
+    },
+    {
+      "title": "Data Science Intern",
+      "company": "Menon and Menon Ltd",
+      "location": "India",
+      "dates": "Jan 2022 - May 2022",
+      "skills_used": [
+        "Python",
+        "Logistic Regression",
+        "Random Forest",
+        "YOLOv5",
+        "VGG19",
+        "Selenium",
+        "Time Series Forecasting"
+      ],
+      "bullets": [
+        "Achieved over 90% accuracy in diabetes risk prediction, as measured by model evaluation results, by building Logistic Regression and Random Forest classifiers across preprocessing, training, and validation.",
+        "Delivered multiclass food image classification workflows, as evidenced by 2 computer-vision pipelines using YOLOv5 and VGG19, by implementing image preprocessing, model training, and performance validation.",
+        "Enabled continuous commodity-price intelligence, as evidenced by recurring market-tracking outputs, by building 1 Selenium data-collection pipeline with time-series forecasting."
+      ]
+    }
+  ],
   "projects": [
     {
-      "id": "otto_recommender",
-      "name": "OTTO Session-Based Recommender System",
+      "id": "careersite_agent",
+      "name": "CareerSite Agent",
+      "status": "Ongoing",
       "tags": [
-        "recommender_systems",
-        "ranking",
-        "feature_engineering",
-        "streamlit",
-        "deployment",
-        "inference_optimization"
+        "agentic_workflows",
+        "rag",
+        "llm",
+        "fastapi",
+        "n8n",
+        "workflow_automation",
+        "skill_extraction",
+        "job_matching",
+        "decision_support",
+        "python_development"
       ],
       "tech_stack": [
         "Python",
-        "Pandas",
-        "Scikit-learn",
-        "Streamlit"
+        "FastAPI",
+        "n8n",
+        "LangChain",
+        "RAG"
       ],
       "bullets": [
-        "Built a two-stage recommendation pipeline for next-item interaction prediction.",
-        "Engineered behavioral features for low-latency inference.",
-        "Deployed a Streamlit UI on Hugging Face Spaces."
+        "Automated job discovery and application preparation workflows, as evidenced by event-driven n8n orchestration and FastAPI skill-extraction services, by architecting an agentic AI pipeline for parsing, scoring, routing, and packet generation.",
+        "Improved resume-job matching consistency, as evidenced by structured skill extraction and scoring outputs, by implementing RAG pipelines grounded in resume and JD evidence.",
+        "Increased decision consistency across job leads, as evidenced by threshold-based routing and audit trails, by designing modular scoring logic and iterative evaluation loops."
       ]
     },
     {
@@ -108,19 +183,45 @@
         "aws",
         "deployment",
         "latency_optimization",
-        "decision_support"
+        "decision_support",
+        "scenario_modeling"
       ],
       "tech_stack": [
-        "RAG",
-        "Llama",
+        "Llama-3.2-1B",
         "SentenceTransformers",
+        "RAG",
         "Streamlit",
         "AWS EC2"
       ],
       "bullets": [
-        "Developed retrieval-augmented analytics over EV-VMT reports.",
-        "Optimized chunking, embeddings, and prompt design for CPU-only deployment.",
-        "Built a multi-tab dashboard for scenario analysis."
+        "Enabled natural-language analysis of CO2 savings, cost-per-mile, and range trade-offs, as evidenced by an interactive RAG dashboard over FHWA/BTS EV-VMT reports, by integrating Llama-3.2-1B, SentenceTransformers, and Streamlit.",
+        "Delivered reproducible CPU-only deployment on AWS EC2, as evidenced by a rebuilt indexing and inference pipeline, by optimizing chunking, embeddings, and prompt design for constrained compute.",
+        "Supported EV scenario decision analysis, as evidenced by VMT aggregation, range simulation, and EREV trade-off views, by building a multi-tab Streamlit dashboard."
+      ]
+    },
+    {
+      "id": "otto_recommender",
+      "name": "OTTO Session-Based Recommender System",
+      "tags": [
+        "recommender_systems",
+        "ranking",
+        "feature_engineering",
+        "streamlit",
+        "deployment",
+        "inference_optimization",
+        "interpretability"
+      ],
+      "tech_stack": [
+        "Python",
+        "Scikit-learn",
+        "Pandas",
+        "Streamlit",
+        "Hugging Face Spaces"
+      ],
+      "bullets": [
+        "Predicted top-K next-item interactions from raw clickstream sessions, as evidenced by ranked recommendation outputs, by designing a two-stage pipeline combining co-visitation candidate generation and logistic SGD ranking.",
+        "Improved recommendation interpretability, as evidenced by SHAP-style feature attribution, by engineering popularity, recency, and session-affinity features.",
+        "Delivered an interactive recommendation demo under cloud memory constraints, as evidenced by a Hugging Face Spaces deployment, by optimizing Streamlit inference for CPU cold starts."
       ]
     },
     {
@@ -133,7 +234,8 @@
         "domain_adaptation",
         "edge_ai",
         "latency",
-        "deployment_evaluation"
+        "deployment_evaluation",
+        "speed_estimation"
       ],
       "tech_stack": [
         "YOLOv8n",
@@ -142,9 +244,9 @@
         "OpenCV"
       ],
       "bullets": [
-        "Fine-tuned YOLOv8n on VisDrone.",
-        "Built an end-to-end traffic analytics pipeline.",
-        "Evaluated GPU and CPU deployment performance."
+        "Reached mAP50 of 0.4052 and precision of 0.5097 across 5 vehicle classes, as measured by VisDrone validation results, by fine-tuning YOLOv8n and integrating ByteTrack/OpenCV for detection, tracking, and speed estimation.",
+        "Reduced domain-shift risk in traffic video inference, as evidenced by source-performance preservation, by implementing AdaBN test-time adaptation.",
+        "Informed edge deployment strategy, as evidenced by GPU FP32 at 7.45 ms/frame, CPU FP32 at 192.70 ms/frame, and CPU INT8 at 197.27 ms/frame, by benchmarking inference modes and identifying that INT8 offered no latency gain."
       ]
     },
     {
@@ -156,7 +258,8 @@
         "semi_supervised_learning",
         "streamlit",
         "diagnostic_ai",
-        "mobile_inference"
+        "mobile_inference",
+        "image_classification"
       ],
       "tech_stack": [
         "TensorFlow",
@@ -165,31 +268,56 @@
         "Streamlit"
       ],
       "bullets": [
-        "Built a disease classification pipeline with pseudo-labeling.",
-        "Developed a real-time diagnostic web app.",
-        "Optimized inference for low-resource environments."
+        "Achieved about 99.2% accuracy across three cocoa leaf disease classes, as measured by classification results on limited labeled data, by building a semi-supervised EfficientNet-B0 pipeline with cosine-similarity pseudo-labeling.",
+        "Enabled real-time disease review for agricultural users, as evidenced by batch inference, PDF reports, seasonal trend analytics, and treatment-cost outputs, by developing a diagnostic web app.",
+        "Improved mobile-friendly precision agriculture access, as evidenced by low-resource inference readiness, by optimizing the diagnostic workflow for constrained environments."
+      ]
+    }
+  ],
+  "publications": [
+    {
+      "id": "contributions_of_extended_range_electric_vehicles_to_electrified_miles_emissions_and_transportat",
+      "title": "Contributions of Extended-Range Electric Vehicles to Electrified Miles, Emissions, and Transportation Cost Reduction",
+      "venue": "Energies (MDPI)",
+      "year": "2025",
+      "type": "peer-reviewed publication",
+      "tags": [
+        "transportation analytics",
+        "scenario modeling",
+        "optimization",
+        "emissions analysis",
+        "cost analysis",
+        "policy decision support"
+      ],
+      "bullets": [
+        "Quantified EREV electrification potential across 286.1 million vehicles and 3,262.80 billion annual miles, as measured by BTS/FHWA validation within 1-2% for most months, by modeling 10 trip-distance bins with bounded least-squares optimization.",
+        "Identified 100-125 mile EREV range as the cost-effective policy band, as evidenced by 73.3% VMT electrification and 573.9 Mt CO2 savings at 50 miles versus 86.8% VMT and 679.7 Mt at 150 miles, by comparing 5 range scenarios, 4 charging frequencies, and battery CAPEX trade-offs.",
+        "Quantified diminishing returns from larger EREV batteries, as evidenced by 320 billion added electric miles from 50 to 100 miles versus only 121 billion from 100 to 150 miles, by comparing national electric-VMT gains across range scenarios.",
+        "Calculated fleet battery investment requirements, as evidenced by 3.6 TWh and 0.41 trillion USD CAPEX for 50-mile EREVs versus 10.7 TWh and 1.24 trillion USD for 150-mile EREVs, by translating range and efficiency assumptions into capacity and cost metrics.",
+        "Evaluated operating-cost sensitivity, as evidenced by 4-8 cents per electric mile versus 11.4 cents per ICE mile under average-to-best scenarios, by comparing electricity prices, gasoline prices, EV efficiency, and fleet fuel economy.",
+        "Modeled charging-access effects on electrification value, as evidenced by up to 75% loss of potential electric miles for drivers charging fewer than 5 times per week, by simulating 7-, 5-, 3-, and 2-day weekly charging patterns."
       ]
     },
     {
-      "id": "water_usage_forecasting",
-      "name": "Water Usage Forecasting with Time-Series Modeling",
+      "id": "applications_of_ml_and_data_science_in_healthcare_a_survey_ictcs_2022_2022",
+      "title": "Applications of ML and Data Science in Healthcare - A Survey",
+      "venue": "ICTCS 2022",
+      "year": "2022",
+      "type": "conference presentation",
       "tags": [
-        "time_series",
-        "forecasting",
-        "model_selection",
-        "aws",
-        "deployment",
-        "evaluation"
-      ],
-      "tech_stack": [
-        "Prophet",
-        "Scikit-learn",
-        "AWS EC2"
+        "machine learning survey",
+        "real world data",
+        "healthcare analytics",
+        "process improvement",
+        "data governance",
+        "explainability"
       ],
       "bullets": [
-        "Implemented a forecasting workflow with validation and diagnostics.",
-        "Selected a stable production model.",
-        "Deployed on EC2 for on-demand inference."
+        "Quantified healthcare AI adoption drivers, as evidenced by 86% reported AI usage, 54 million USD average AI project spend, 2,314 exabytes of 2020 healthcare RWD, and up to 40 PB/day generated by one hospital environment, by synthesizing industry survey and RWD infrastructure evidence.",
+        "Mapped healthcare AI deployment risk across 4 application pillars and 5 regulatory challenge categories, as evidenced by 80% clinical-trial enrollment failures, 65% biopharma RWD access gaps, and 128 of 194 countries with strict data-protection laws, by translating ML adoption barriers into an operational taxonomy.",
+        "Built a healthcare data-source taxonomy, as evidenced by 4 evidence categories and 5 RWD collection channels, by comparing randomized trials, pragmatic trials, real-world data, synthetic RWD, EHRs, claims, registries, patient-reported outcomes, and biometric devices.",
+        "Organized healthcare ML methods for practitioner use, as evidenced by 7 supervised algorithm families and 9 unsupervised algorithm families, by mapping model classes to labeled and unlabeled healthcare data workflows.",
+        "Quantified clinical AI adoption constraints, as evidenced by 42.5% cited adoption potential and the need for prospective validation beyond retrospective studies, by synthesizing explainability, trust, and clinical decision-support barriers."
       ]
     }
   ]

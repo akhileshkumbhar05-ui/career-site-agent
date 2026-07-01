@@ -100,6 +100,7 @@ class JDParserService:
             responsibilities=responsibilities,
             keywords=keywords,
             constraints=constraints,
+            jd_text=payload.jd_text,   # ← carries raw JD through to Claude tailoring
         )
 
     @staticmethod

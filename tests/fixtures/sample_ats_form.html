@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sample ATS Form</title>
+  </head>
+  <body>
+    <form>
+      <label for="first_name">First Name</label>
+      <input id="first_name" name="first_name" />
+
+      <label for="last_name">Last Name</label>
+      <input id="last_name" name="last_name" />
+
+      <label for="email">Email Address</label>
+      <input id="email" type="email" />
+
+      <label for="phone">Phone Number</label>
+      <input id="phone" type="tel" />
+
+      <label for="linkedin">LinkedIn Profile</label>
+      <input id="linkedin" />
+
+      <label for="country">Country</label>
+      <select id="country">
+        <option></option>
+        <option>United States of America</option>
+      </select>
+
+      <fieldset>
+        <legend>Are you legally authorized to work in the United States?</legend>
+        <label><input type="radio" name="authorized" value="yes" /> Yes</label>
+        <label><input type="radio" name="authorized" value="no" /> No</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Will you now or in the future require visa sponsorship?</legend>
+        <label><input type="radio" name="sponsorship" value="yes" /> Yes</label>
+        <label><input type="radio" name="sponsorship" value="no" /> No</label>
+      </fieldset>
+
+      <label for="resume">Resume/CV</label>
+      <input id="resume" type="file" />
+
+      <label for="gender">Gender</label>
+      <select id="gender">
+        <option></option>
+        <option>Female</option>
+        <option>Male</option>
+      </select>
+
+      <button type="submit">Submit Application</button>
+    </form>
+  </body>
+</html>

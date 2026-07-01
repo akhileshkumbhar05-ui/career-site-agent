@@ -1,0 +1,85 @@
+{
+  "name": "WF1_Manual_FastAPI_Discord_Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { job_id: 'wf1_manual_test_001', company: 'Example Company', title: 'Machine Learning Engineer', jd_text: 'Responsibilities include Python, machine learning, model evaluation, APIs, and deployment. Requirements include SQL, FastAPI, and stakeholder communication.', discovered_url: 'https://example.com/careers/ml-engineer', source: 'n8n manual test' } }];"
+      },
+      "id": "sample-job",
+      "name": "Build Sample Job Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/pipeline/process-job",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "job_id", "value": "={{ $json.job_id }}" },
+            { "name": "company", "value": "={{ $json.company }}" },
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "jd_text", "value": "={{ $json.jd_text }}" },
+            { "name": "discovered_url", "value": "={{ $json.discovered_url }}" },
+            { "name": "source", "value": "={{ $json.source }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "process-job",
+      "name": "Process Job in FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [730, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**CareerSite Agent WF1 test**\\nCompany: ' + $json.company + '\\nRole: ' + $json.title + '\\nDecision: ' + $json.decision + '\\nBase score: ' + $json.base_score + '%\\nReason: ' + $json.decision_reason }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-test",
+      "name": "Discord Test Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [980, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Build Sample Job Payload", "type": "main", "index": 0 }]]
+    },
+    "Build Sample Job Payload": {
+      "main": [[{ "node": "Process Job in FastAPI", "type": "main", "index": 0 }]]
+    },
+    "Process Job in FastAPI": {
+      "main": [[{ "node": "Discord Test Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "versionId": "1"
+}

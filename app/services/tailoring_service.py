@@ -13,6 +13,23 @@ class TailoringService:
     def tailor(self, payload: ResumeTailorRequest) -> ResumeTailorResponse:
         target_role = self._infer_role_key(payload.parsed_jd.title)
         role_profile = self.role_profiles.get(target_role, {})
+        summary_variant_key = role_profile.get("summary_variant_key", target_role)
+        summary_variant = self._select_summary_variant(summary_variant_key)
+
+        if payload.current_score < 65:
+            return ResumeTailorResponse(
+                job_id=payload.job_id,
+                resume_version=payload.resume_version,
+                source_resume_version=payload.resume_version,
+                tailored_resume_version=f"{payload.job_id}_not_tailored",
+                changes_summary=[
+                    "Rule-based tailoring skipped because the current match score is below the tailoring threshold."
+                ],
+                tailored_score=payload.current_score,
+                selected_project_ids=[],
+                summary_variant_key=summary_variant_key,
+                summary_text="",
+            )
 
         target_keywords = normalize_skills(
             payload.parsed_jd.required_skills
@@ -25,10 +42,11 @@ class TailoringService:
             target_role=target_role,
             role_profile=role_profile,
         )
-        selected_project_ids = [project["id"] for project in ranked_projects[:3]]
-
-        summary_variant_key = role_profile.get("summary_variant_key", target_role)
-        summary_variant = self._select_summary_variant(summary_variant_key)
+        selected_project_ids = (
+            [project["id"] for project in ranked_projects[:3]]
+            if "projects" in payload.preferences.emphasis
+            else []
+        )
 
         tailored_score = self._estimate_tailored_score(
             current_score=payload.current_score,
@@ -42,14 +60,21 @@ class TailoringService:
             summary_variant=summary_variant,
             selected_projects=selected_project_ids,
         )
+        changes.insert(
+            0,
+            f"Tailoring preference: {payload.preferences.preset} with {payload.preferences.rewrite_intensity} edits.",
+        )
 
         return ResumeTailorResponse(
             job_id=payload.job_id,
+            resume_version=payload.resume_version,
             source_resume_version=payload.resume_version,
             tailored_resume_version=f"{payload.job_id}_tailored_v1",
             changes_summary=changes,
             tailored_score=tailored_score,
             selected_project_ids=selected_project_ids,
+            summary_variant_key=summary_variant_key,
+            summary_text=summary_variant if "summary" in payload.preferences.emphasis else "",
         )
 
     def _infer_role_key(self, title: str) -> str:
@@ -62,8 +87,16 @@ class TailoringService:
 
         if any(token in lowered_title for token in ["ai engineer", "llm", "genai", "rag"]):
             return "ai_engineer"
+        if any(token in lowered_title for token in ["computer vision", "vision engineer", "image processing"]):
+            return "computer_vision_engineer"
+        if any(token in lowered_title for token in ["software engineer", "python developer", "backend engineer"]):
+            return "ai_software_engineer"
         if any(token in lowered_title for token in ["machine learning", "ml engineer", "research engineer", "computer vision"]):
             return "ml_engineer"
+        if any(token in lowered_title for token in ["business analyst", "business intelligence", "bi analyst", "product analyst"]):
+            return "business_analyst"
+        if any(token in lowered_title for token in ["data analyst", "analytics analyst", "reporting analyst", "operations analyst"]):
+            return "data_analyst"
         if any(token in lowered_title for token in ["data scientist", "analytics", "applied scientist"]):
             return "data_scientist"
 

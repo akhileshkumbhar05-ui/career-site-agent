@@ -1,0 +1,5 @@
+Deployment ID: AKfycbxRAwYorCla_HEnmExOTso28uH2mea4HdLI2fraZHnH7pwzEiXTVDfy3OuYydiYsy8S1A
+Web app URL: https://script.google.com/macros/s/AKfycbxRAwYorCla_HEnmExOTso28uH2mea4HdLI2fraZHnH7pwzEiXTVDfy3OuYydiYsy8S1A/exec
+
+
+Invoke-RestMethod -Method Post -Uri "https://script.google.com/macros/s/AKfycbxRAwYorCla_HEnmExOTso28uH2mea4HdLI2fraZHnH7pwzEiXTVDfy3OuYydiYsy8S1A/exec" -ContentType "application/json" -Body '{"company":"Lucid Software","role":"Data Analyst","salary":"N/A","job_posted_on":"Jobright AI","applied_using":"Company Website","status":"Applied","link":"https://boards.greenhouse.io/lucidsoftware/jobs/123"}'

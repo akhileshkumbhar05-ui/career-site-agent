@@ -1,0 +1,275 @@
+{
+  "id": "Qh7L9mWf5Backfil",
+  "name": "WF5_Email_Backfill_Scanner",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "backfill-schedule",
+      "name": "Backfill Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 10,
+        "simple": true,
+        "filters": {
+          "includeSpamTrash": false,
+          "readStatus": "both",
+          "q": "newer_than:3d (unfortunately OR rejection OR rejected OR interview OR assessment OR offer OR decision OR \"not move\" OR \"not moving forward\" OR \"move forward\" OR \"moving forward\" OR \"next step\" OR \"schedule a call\" OR \"action on your case\" OR \"status update\") -\"thank you for applying\" -\"application submission\" -\"received your application\""
+        }
+      },
+      "id": "get-recent-gmail-messages",
+      "name": "Get Recent Gmail Messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [430, 300],
+      "credentials": {
+        "gmailOAuth2": { "name": "Gmail OAuth2 - Job Applications" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nstaticData.seenMessageIds = staticData.seenMessageIds || {};\nconst seen = staticData.seenMessageIds;\nconst now = Date.now();\nconst retentionMs = 14 * 24 * 60 * 60 * 1000;\nfor (const [id, timestamp] of Object.entries(seen)) {\n  if (now - timestamp > retentionMs) {\n    delete seen[id];\n  }\n}\nconst output = [];\nfor (const item of $input.all()) {\n  const email = item.json;\n  const messageId = email.id || email.message_id || '';\n  if (!messageId || seen[messageId]) {\n    continue;\n  }\n  seen[messageId] = now;\n  const headers = email.payload && email.payload.headers ? email.payload.headers : [];\n  const headerValue = (name) => {\n    const found = headers.find((header) => String(header.name || '').toLowerCase() === name.toLowerCase());\n    return found ? String(found.value || '') : '';\n  };\n  const subject = email.subject || email.Subject || headerValue('subject') || '';\n  const body = email.text || email.snippet || email.body || '';\n  const from = email.from || email.From || headerValue('from') || '';\n  const emailMatch = from.match(/<(.+?)>/) || from.match(/([^\\s]+@[^\\s]+)/);\n  const senderEmail = emailMatch ? emailMatch[1] : '';\n  const nameMatch = from.match(/^\"?([^\"<]+)\"?\\s*</);\n  const senderName = nameMatch ? nameMatch[1].trim() : '';\n  output.push({ json: { subject, body: String(body).substring(0, 5000), sender_email: senderEmail, sender_name: senderName, raw_from: from, message_id: messageId, thread_id: email.threadId || email.thread_id || '', internal_date: email.internalDate || '' } });\n}\nreturn output;"
+      },
+      "id": "extract-backfill-email-fields",
+      "name": "Extract Backfill Email Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/email/classify",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "subject", "value": "={{ $json.subject }}" },
+            { "name": "body", "value": "={{ $json.body }}" },
+            { "name": "sender_email", "value": "={{ $json.sender_email }}" },
+            { "name": "sender_name", "value": "={{ $json.sender_name }}" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "classify-backfill-email",
+      "name": "Classify Backfill Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [970, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.new_status }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "leftValue": "={{ $json.new_status }}",
+              "rightValue": "Applied",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.5,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-backfill-actionable",
+      "name": "IF Backfill Actionable",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1230, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_YOUR_APPS_SCRIPT_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "target", "value": "status_update" },
+            { "name": "company", "value": "={{ $json.company_name }}" },
+            { "name": "status", "value": "={{ $json.new_status }}" },
+            { "name": "subject", "value": "={{ $('Extract Backfill Email Fields').item.json.subject }}" },
+            { "name": "sender", "value": "={{ $('Extract Backfill Email Fields').item.json.raw_from }}" },
+            { "name": "email_type", "value": "={{ $json.email_type }}" },
+            { "name": "confidence", "value": "={{ $json.confidence }}" },
+            { "name": "reasoning", "value": "={{ $json.reasoning }}" },
+            { "name": "matched_rule", "value": "={{ $json.matched_rule }}" },
+            { "name": "message_id", "value": "={{ $('Extract Backfill Email Fields').item.json.message_id }}" },
+            { "name": "thread_id", "value": "={{ $('Extract Backfill Email Fields').item.json.thread_id }}" },
+            { "name": "action", "value": "backfill_status_update" },
+            { "name": "source", "value": "WF5_Email_Backfill_Scanner" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } },
+          "timeout": 30000
+        }
+      },
+      "id": "update-backfill-status-sheets",
+      "name": "Update Backfill Status in Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1490, 210]
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.all().map((item) => item.json);\nif (!responses.length) {\n  return [];\n}\nconst classifications = $items('Classify Backfill Email').map((item) => item.json);\nconst emails = $items('Extract Backfill Email Fields').map((item) => item.json);\nconst updateCandidates = classifications\n  .map((classification, index) => ({ classification, email: emails[index] || {} }))\n  .filter(({ classification }) => classification.new_status && classification.new_status !== 'Applied' && Number(classification.confidence || 0) > 0.5);\nif (!updateCandidates.length) {\n  return [];\n}\nconst totalRowsUpdated = responses.reduce((total, response) => total + Number(response.rows_updated || 0), 0);\nconst lines = updateCandidates.slice(0, 8).map(({ classification, email }) => {\n  return '- ' + (classification.company_name || 'Unknown company') + ': ' + classification.new_status + ' | ' + (email.subject || 'No subject');\n});\nconst extra = updateCandidates.length > 8 ? '\\n+' + (updateCandidates.length - 8) + ' more' : '';\nreturn [{ json: { content: '**Backfill email updates**\\nProcessed status-change emails: ' + updateCandidates.length + '\\nRows updated: ' + totalRowsUpdated + '\\n' + lines.join('\\n') + extra } }];"
+      },
+      "id": "build-backfill-update-summary",
+      "name": "Build Backfill Update Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1730, 210]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-backfill-email-update",
+      "name": "Discord Backfill Email Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1980, 210]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_YOUR_APPS_SCRIPT_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "target", "value": "email_action" },
+            { "name": "company", "value": "={{ $json.company_name }}" },
+            { "name": "subject", "value": "={{ $('Extract Backfill Email Fields').item.json.subject }}" },
+            { "name": "sender", "value": "={{ $('Extract Backfill Email Fields').item.json.raw_from }}" },
+            { "name": "email_type", "value": "={{ $json.email_type }}" },
+            { "name": "confidence", "value": "={{ $json.confidence }}" },
+            { "name": "reasoning", "value": "={{ $json.reasoning }}" },
+            { "name": "matched_rule", "value": "={{ $json.matched_rule }}" },
+            { "name": "message_id", "value": "={{ $('Extract Backfill Email Fields').item.json.message_id }}" },
+            { "name": "thread_id", "value": "={{ $('Extract Backfill Email Fields').item.json.thread_id }}" },
+            { "name": "action", "value": "={{ $json.email_type === 'ignore' ? 'backfill_ignored' : ($json.email_type === 'acknowledgment' ? 'backfill_acknowledgment_logged' : 'backfill_no_status_change') }}" },
+            { "name": "source", "value": "WF5_Email_Backfill_Scanner" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } },
+          "timeout": 30000
+        }
+      },
+      "id": "log-backfill-manual-review-sheets",
+      "name": "Log Backfill Non-Update in Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1490, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const classifications = $items('Classify Backfill Email').map((item) => item.json);\nconst emails = $items('Extract Backfill Email Fields').map((item) => item.json);\nconst reviewItems = classifications\n  .map((classification, index) => ({ classification, email: emails[index] || {} }))\n  .filter(({ classification }) => classification.requires_review === true);\nif (!reviewItems.length) {\n  return [];\n}\nconst lines = reviewItems.slice(0, 8).map(({ classification, email }) => {\n  return '- ' + (email.raw_from || 'Unknown sender') + ' | ' + (email.subject || 'No subject') + ' | ' + Math.round(Number(classification.confidence || 0) * 100) + '% | ' + (classification.matched_rule || classification.email_type);\n});\nconst extra = reviewItems.length > 8 ? '\\n+' + (reviewItems.length - 8) + ' more' : '';\nreturn [{ json: { content: '**Backfilled job emails need manual review**\\nReview count: ' + reviewItems.length + '\\n' + lines.join('\\n') + extra } }];"
+      },
+      "id": "build-backfill-review-summary",
+      "name": "Build Backfill Review Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1730, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-backfill-manual-review",
+      "name": "Discord Backfill Manual Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1980, 420]
+    }
+  ],
+  "connections": {
+    "Backfill Schedule": {
+      "main": [[{ "node": "Get Recent Gmail Messages", "type": "main", "index": 0 }]]
+    },
+    "Get Recent Gmail Messages": {
+      "main": [[{ "node": "Extract Backfill Email Fields", "type": "main", "index": 0 }]]
+    },
+    "Extract Backfill Email Fields": {
+      "main": [[{ "node": "Classify Backfill Email", "type": "main", "index": 0 }]]
+    },
+    "Classify Backfill Email": {
+      "main": [[{ "node": "IF Backfill Actionable", "type": "main", "index": 0 }]]
+    },
+    "IF Backfill Actionable": {
+      "main": [
+        [{ "node": "Update Backfill Status in Sheets", "type": "main", "index": 0 }],
+        [{ "node": "Log Backfill Non-Update in Sheets", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Backfill Status in Sheets": {
+      "main": [[{ "node": "Build Backfill Update Summary", "type": "main", "index": 0 }]]
+    },
+    "Build Backfill Update Summary": {
+      "main": [[{ "node": "Discord Backfill Email Update", "type": "main", "index": 0 }]]
+    },
+    "Log Backfill Non-Update in Sheets": {
+      "main": [[{ "node": "Build Backfill Review Summary", "type": "main", "index": 0 }]]
+    },
+    "Build Backfill Review Summary": {
+      "main": [[{ "node": "Discord Backfill Manual Review", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "1"
+}

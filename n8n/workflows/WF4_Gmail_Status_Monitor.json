@@ -1,0 +1,255 @@
+{
+  "name": "WF4_Gmail_Status_Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyX", "value": 5, "unit": "minutes" }]
+        },
+        "filters": {
+          "readStatus": "unread",
+          "sender": ""
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": false
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": { "name": "Gmail OAuth2 - Job Applications" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst headers = item.payload && item.payload.headers ? item.payload.headers : [];\nconst headerValue = (name) => {\n  const found = headers.find((header) => String(header.name || '').toLowerCase() === name.toLowerCase());\n  return found ? String(found.value || '') : '';\n};\nconst subject = item.subject || item.Subject || headerValue('subject') || '';\nconst body = item.text || item.snippet || item.body || '';\nconst from = item.from || item.From || headerValue('from') || '';\nconst emailMatch = from.match(/<(.+?)>/) || from.match(/([^\\s]+@[^\\s]+)/);\nconst senderEmail = emailMatch ? emailMatch[1] : '';\nconst nameMatch = from.match(/^\"?([^\"<]+)\"?\\s*</);\nconst senderName = nameMatch ? nameMatch[1].trim() : '';\nreturn [{ json: { subject, body: String(body).substring(0, 5000), sender_email: senderEmail, sender_name: senderName, raw_from: from, message_id: item.id || '', thread_id: item.threadId || item.thread_id || '' } }];"
+      },
+      "id": "extract-email-fields",
+      "name": "Extract Email Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/email/classify",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "subject", "value": "={{ $json.subject }}" },
+            { "name": "body", "value": "={{ $json.body }}" },
+            { "name": "sender_email", "value": "={{ $json.sender_email }}" },
+            { "name": "sender_name", "value": "={{ $json.sender_name }}" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "classify-email",
+      "name": "Classify Email in FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.new_status }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "leftValue": "={{ $json.new_status }}",
+              "rightValue": "Applied",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.5,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-actionable",
+      "name": "IF Actionable",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1020, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_YOUR_APPS_SCRIPT_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "target", "value": "status_update" },
+            { "name": "company", "value": "={{ $json.company_name }}" },
+            { "name": "status", "value": "={{ $json.new_status }}" },
+            { "name": "subject", "value": "={{ $('Extract Email Fields').first().json.subject }}" },
+            { "name": "sender", "value": "={{ $('Extract Email Fields').first().json.raw_from }}" },
+            { "name": "email_type", "value": "={{ $json.email_type }}" },
+            { "name": "confidence", "value": "={{ $json.confidence }}" },
+            { "name": "reasoning", "value": "={{ $json.reasoning }}" },
+            { "name": "matched_rule", "value": "={{ $json.matched_rule }}" },
+            { "name": "message_id", "value": "={{ $('Extract Email Fields').first().json.message_id }}" },
+            { "name": "thread_id", "value": "={{ $('Extract Email Fields').first().json.thread_id }}" },
+            { "name": "action", "value": "email_status_update" },
+            { "name": "source", "value": "WF4_Gmail_Status_Monitor" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } },
+          "timeout": 30000
+        }
+      },
+      "id": "update-status-sheets",
+      "name": "Update Status in Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1280, 210]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**Job email update**\\nCompany: ' + $('Classify Email in FastAPI').first().json.company_name + '\\nType: ' + $('Classify Email in FastAPI').first().json.email_type + '\\nNew status: ' + $('Classify Email in FastAPI').first().json.new_status + '\\nRows updated: ' + ($json.rows_updated || 0) + '\\nSubject: ' + $('Extract Email Fields').first().json.subject + '\\nConfidence: ' + Math.round($('Classify Email in FastAPI').first().json.confidence * 100) + '%' }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-email-update",
+      "name": "Discord Email Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1530, 210]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_YOUR_APPS_SCRIPT_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "target", "value": "email_action" },
+            { "name": "company", "value": "={{ $json.company_name }}" },
+            { "name": "subject", "value": "={{ $('Extract Email Fields').first().json.subject }}" },
+            { "name": "sender", "value": "={{ $('Extract Email Fields').first().json.raw_from }}" },
+            { "name": "email_type", "value": "={{ $json.email_type }}" },
+            { "name": "confidence", "value": "={{ $json.confidence }}" },
+            { "name": "reasoning", "value": "={{ $json.reasoning }}" },
+            { "name": "matched_rule", "value": "={{ $json.matched_rule }}" },
+            { "name": "message_id", "value": "={{ $('Extract Email Fields').first().json.message_id }}" },
+            { "name": "thread_id", "value": "={{ $('Extract Email Fields').first().json.thread_id }}" },
+            { "name": "action", "value": "={{ $json.email_type === 'ignore' ? 'ignored' : ($json.email_type === 'acknowledgment' ? 'acknowledgment_logged' : 'manual_review') }}" },
+            { "name": "source", "value": "WF4_Gmail_Status_Monitor" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } },
+          "timeout": 30000
+        }
+      },
+      "id": "log-low-confidence-sheets",
+      "name": "Log Non-Status Email in Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1280, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Classify Email in FastAPI').first().json.requires_review }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-needs-manual-review",
+      "name": "IF Needs Manual Review",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1530, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**Unclassified job email - manual review needed**\\nFrom: ' + $('Extract Email Fields').first().json.raw_from + '\\nSubject: ' + $('Extract Email Fields').first().json.subject + '\\nReasoning: ' + $('Classify Email in FastAPI').first().json.reasoning }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-low-confidence",
+      "name": "Discord Low Confidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 420]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "Extract Email Fields", "type": "main", "index": 0 }]]
+    },
+    "Extract Email Fields": {
+      "main": [[{ "node": "Classify Email in FastAPI", "type": "main", "index": 0 }]]
+    },
+    "Classify Email in FastAPI": {
+      "main": [[{ "node": "IF Actionable", "type": "main", "index": 0 }]]
+    },
+    "IF Actionable": {
+      "main": [
+        [{ "node": "Update Status in Sheets", "type": "main", "index": 0 }],
+        [{ "node": "Log Non-Status Email in Sheets", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Status in Sheets": {
+      "main": [[{ "node": "Discord Email Update", "type": "main", "index": 0 }]]
+    },
+    "Log Non-Status Email in Sheets": {
+      "main": [[{ "node": "IF Needs Manual Review", "type": "main", "index": 0 }]]
+    },
+    "IF Needs Manual Review": {
+      "main": [
+        [{ "node": "Discord Low Confidence", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "1"
+}

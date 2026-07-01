@@ -1,0 +1,132 @@
+{
+  "id": "W5H2XRIHBBdOgvdG",
+  "name": "WF2_Incoming_Job_Lead_Processor",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incoming-job-lead",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "incoming-job-lead",
+      "name": "Incoming Job Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "webhookId": "incoming-job-lead"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/queue/enqueue",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job: { job_id: (($json.body && $json.body.job_id) || $json.job_id || ''), company: (($json.body && $json.body.company) || $json.company || ''), title: (($json.body && $json.body.title) || $json.title || ''), jd_text: (($json.body && $json.body.jd_text) || $json.jd_text || ''), discovered_url: (($json.body && $json.body.discovered_url) || $json.discovered_url || ''), source: (($json.body && $json.body.source) || $json.source || 'n8n webhook'), posted_at: (($json.body && ($json.body.posted_at || $json.body.posted_date)) || $json.posted_at || $json.posted_date || ''), location: (($json.body && $json.body.location) || $json.location || '') }, priority: Number((($json.body && $json.body.priority) || $json.priority || 100)) }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "enqueue-job-lead",
+      "name": "Enqueue Job Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const queued = $input.first().json;\nconst webhook = $('Incoming Job Lead').first().json;\nconst lead = webhook.body || webhook;\nreturn [{\n  json: {\n    ...lead,\n    queue_id: queued.queue_id || '',\n    queue_status: queued.status || 'unknown',\n    duplicate: queued.duplicate === true,\n    queue_message: queued.message || '',\n    next_step: 'Run the local queue worker to score jobs and export application packets.',\n    worker_command: '.\\\\.venv\\\\Scripts\\\\python.exe scripts\\\\process_job_queue.py --limit 5 --output-root data\\\\outputs\\\\queue_packets',\n    queued_at: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "normalize-queue-fields",
+      "name": "Normalize Queue Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**CareerSite lead queued**\\nCompany: ' + $json.company + '\\nRole: ' + $json.title + '\\nQueue ID: ' + $json.queue_id + '\\nStatus: ' + $json.queue_status + ($json.duplicate ? '\\nDuplicate: yes, existing queue item reused' : '') + '\\nSource: ' + ($json.source || '') + '\\nLink: ' + ($json.discovered_url || $json.link || '') + '\\nNext: run queue worker to score/export packets.' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "discord-queued-lead",
+      "name": "Discord Queued Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1040,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Incoming Job Lead": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Job Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enqueue Job Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalize Queue Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Queue Fields": {
+      "main": [
+        [
+          {
+            "node": "Discord Queued Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "d7edad86-3240-404c-8398-da8964a93aaa",
+  "triggerCount": 1,
+  "tags": []
+}

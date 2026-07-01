@@ -1,0 +1,138 @@
+{
+  "id": "WF6QueueWorker001",
+  "name": "WF6_Queue_Worker_Scheduler",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [220, 180]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "queue-worker-schedule",
+      "name": "Queue Worker Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/queue/process-next",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ worker_id: 'n8n-queue-worker', limit: 5, lease_seconds: 900, claim_statuses: ['discovered'], export_packet: true, render_pdf: true, output_root_override: 'data/outputs/queue_packets' }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "process-queue-in-fastapi",
+      "name": "Process Queue in FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const run = $input.first().json;\nconst items = run.items || [];\nconst processed = Number(run.processed || 0);\nconst claimed = Number(run.claimed || 0);\nconst failed = items.filter((item) => item.status === 'failed');\nconst ready = items.filter((item) => item.status === 'packet_ready');\nconst review = items.filter((item) => item.status === 'manual_review' || item.status === 'scored');\nconst rejected = items.filter((item) => item.status === 'rejected');\nconst shouldNotify = processed > 0 || failed.length > 0;\nconst lines = [\n  '**CareerSite queue worker**',\n  `Claimed: ${claimed} | Processed: ${processed}`,\n  `Packet ready: ${ready.length} | Review: ${review.length} | Rejected: ${rejected.length} | Failed: ${failed.length}`,\n];\nfor (const item of items.slice(0, 5)) {\n  const pipeline = item.pipeline_result || {};\n  const exportResult = item.export_result || {};\n  const company = pipeline.company || 'Unknown company';\n  const title = pipeline.title || 'Unknown role';\n  const score = pipeline.base_score === undefined ? 'N/A' : `${pipeline.base_score}%`;\n  const path = exportResult.tailored_resume_pdf_path || exportResult.tailored_resume_html_path || exportResult.packet_folder_path || '';\n  lines.push(`- ${item.status}: ${company} | ${title} | ${score}${path ? ` | ${path}` : ''}`);\n  if (item.error) lines.push(`  Error: ${item.error}`);\n}\nreturn [{ json: { ...run, should_notify: shouldNotify, discord_content: lines.join('\\n').slice(0, 1900) } }];"
+      },
+      "id": "build-worker-summary",
+      "name": "Build Worker Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_notify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-queue-processed",
+      "name": "IF Queue Processed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discord_content }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "discord-queue-worker-summary",
+      "name": "Discord Queue Worker Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1320, 220]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Process Queue in FastAPI", "type": "main", "index": 0 }]]
+    },
+    "Queue Worker Schedule": {
+      "main": [[{ "node": "Process Queue in FastAPI", "type": "main", "index": 0 }]]
+    },
+    "Process Queue in FastAPI": {
+      "main": [[{ "node": "Build Worker Summary", "type": "main", "index": 0 }]]
+    },
+    "Build Worker Summary": {
+      "main": [[{ "node": "IF Queue Processed", "type": "main", "index": 0 }]]
+    },
+    "IF Queue Processed": {
+      "main": [
+        [{ "node": "Discord Queue Worker Summary", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "1"
+}

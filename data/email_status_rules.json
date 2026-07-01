@@ -1,0 +1,238 @@
+{
+  "status_options": [
+    "Applied",
+    "Screening Interview Call",
+    "Technical Interview Call",
+    "HR Interview Call",
+    "Rejection",
+    "Accepted/Offered Job",
+    "Not Yet Applied Due to Technical Issue",
+    "Cleared Automated Review",
+    "ATS Rejection / Scope for Direct Contact",
+    "Initial Rejection - Subject to further details"
+  ],
+  "generic_sender_domains": [
+    "greenhouse.io",
+    "us.greenhouse-mail.io",
+    "lever.co",
+    "myworkday.com",
+    "workday.com",
+    "workdayjobs.com",
+    "icims.com",
+    "taleo.net",
+    "jobvite.com",
+    "smartrecruiters.com",
+    "successfactors.com",
+    "bamboohr.com",
+    "ashbyhq.com",
+    "brassring.com",
+    "myworkdayjobs.com",
+    "workflownotification.com"
+  ],
+  "company_subject_patterns": [
+    "application submission for (?P<company>[^-]+)",
+    "thank you for applying to (?P<company>[^.!]+)",
+    "thank you for applying for .+ at (?P<company>[^.!]+)",
+    "your application to (?P<company>[^-]+)",
+    "thank you for your interest in (?P<company>[^.,!-]+)"
+  ],
+  "review_if_unmatched_patterns": [
+    "application",
+    "candidate",
+    "interview",
+    "recruiter",
+    "hiring",
+    "position",
+    "role",
+    "assessment"
+  ],
+  "rules": [
+    {
+      "id": "non_job_government_account",
+      "email_type": "ignore",
+      "status": "",
+      "confidence": 0.95,
+      "priority": 100,
+      "requires_review": false,
+      "is_job_related": false,
+      "reason": "Non-job account or government status email",
+      "sender_patterns": ["@uscis\\.dhs\\.gov$"],
+      "patterns": ["we have taken an action on your case", "uscis"]
+    },
+    {
+      "id": "job_recommendation_digest",
+      "email_type": "job_digest",
+      "status": "",
+      "confidence": 0.9,
+      "priority": 70,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Job recommendation digest, not an application status update",
+      "subject_patterns": [
+        "daily jobs digest",
+        "job alert",
+        "job matches",
+        "jobs recommended",
+        "may want to hire you",
+        "you would be a great fit",
+        "posted a .* role"
+      ]
+    },
+    {
+      "id": "offer",
+      "email_type": "offer",
+      "status": "Accepted/Offered Job",
+      "confidence": 0.92,
+      "priority": 95,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Offer-stage language detected",
+      "patterns": [
+        "(offer|congratulations).{0,60}(join|position|role|employment)",
+        "we.?d like to (extend|offer)",
+        "pleased to (offer|invite you to join)",
+        "offer of employment"
+      ]
+    },
+    {
+      "id": "technical_interview",
+      "email_type": "technical_interview",
+      "status": "Technical Interview Call",
+      "confidence": 0.88,
+      "priority": 86,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Technical interview or assessment language detected",
+      "patterns": [
+        "technical (interview|screen|assessment|challenge|test)",
+        "coding (assessment|challenge|test|exercise)",
+        "(take.home|takehome).{0,20}(assignment|test|project)",
+        "technical round",
+        "(hackerrank|codility|leetcode|coderpad)"
+      ]
+    },
+    {
+      "id": "hr_interview",
+      "email_type": "hr_interview",
+      "status": "HR Interview Call",
+      "confidence": 0.85,
+      "priority": 86,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "HR, people, or behavioral interview language detected",
+      "patterns": [
+        "(hr|people|culture fit|behavioral).{0,25}interview",
+        "meet with (our hr|the team|hiring manager)",
+        "final (round|interview|stage)"
+      ]
+    },
+    {
+      "id": "screening_interview",
+      "email_type": "screening_interview",
+      "status": "Screening Interview Call",
+      "confidence": 0.85,
+      "priority": 86,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Recruiter screen or introductory call language detected",
+      "patterns": [
+        "(phone|intro|initial|30.minute|15.minute).{0,35}(screen|call|interview|chat)",
+        "(schedule|set up).{0,35}(call|chat|conversation)",
+        "(recruiter|talent).{0,25}(reach out|connect|call)",
+        "like to (speak|chat|connect|talk)"
+      ]
+    },
+    {
+      "id": "cleared_automated_review",
+      "email_type": "cleared_automated",
+      "status": "Cleared Automated Review",
+      "confidence": 0.82,
+      "priority": 82,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Automated screening cleared or next-stage language detected",
+      "patterns": [
+        "(cleared|passed).{0,40}(automated|initial|screening|review)",
+        "(moving forward|advance|proceed).{0,50}(next step|next stage|process)"
+      ]
+    },
+    {
+      "id": "ats_rejection",
+      "email_type": "ats_rejection",
+      "status": "ATS Rejection / Scope for Direct Contact",
+      "confidence": 0.8,
+      "priority": 88,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "ATS-style rejection or automatic qualification language detected",
+      "patterns": [
+        "automated.{0,25}(review|screening|assessment)",
+        "does not (meet|match) (the )?qualifications",
+        "position has been filled",
+        "we.?ve (closed|filled) this (position|role)"
+      ]
+    },
+    {
+      "id": "initial_rejection_followup",
+      "email_type": "initial_rejection_followup",
+      "status": "Initial Rejection - Subject to further details",
+      "confidence": 0.78,
+      "priority": 78,
+      "requires_review": true,
+      "is_job_related": true,
+      "reason": "Rejection or hold language that may need human follow-up",
+      "patterns": [
+        "subject to further details",
+        "need additional information",
+        "unable to proceed until",
+        "cannot process your application",
+        "verify your candidate account",
+        "confirm your email address",
+        "complete setup"
+      ]
+    },
+    {
+      "id": "rejection",
+      "email_type": "rejection",
+      "status": "Rejection",
+      "confidence": 0.88,
+      "priority": 90,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Direct rejection language detected",
+      "patterns": [
+        "we.{0,25}(decided|chosen|moving forward) with (other|another) candidate",
+        "not (moving forward|selected|proceeding)",
+        "made.{0,120}(decision|choice).{0,120}not.{0,30}(move|proceed|continue)",
+        "decision.{0,120}not.{0,30}(move|proceed|continue)",
+        "not.{0,20}move.{0,20}(forward|on|with|to|for)",
+        "unfortunately.{0,70}(position|role|opportunity|application)",
+        "we won.?t be (moving|proceeding|continuing)",
+        "after careful (consideration|review).{0,90}(not|won.?t)",
+        "decided not to move",
+        "application.*not.*(selected|successful)",
+        "we will not be",
+        "thank you for (applying|your interest).{0,220}(however|unfortunately|regret)"
+      ]
+    },
+    {
+      "id": "application_acknowledgment",
+      "email_type": "acknowledgment",
+      "status": "",
+      "confidence": 0.78,
+      "priority": 20,
+      "requires_review": false,
+      "is_job_related": true,
+      "reason": "Application acknowledgement; default Applied status should not be rewritten",
+      "patterns": [
+        "(received|confirmed).{0,60}(application|interest)",
+        "thank you for (applying|submitting|your interest)",
+        "application (confirmation|submission)",
+        "we.?ll be in touch",
+        "under (review|consideration)",
+        "your application to .+ was sent",
+        "your application to .+"
+      ]
+    }
+  ]
+}

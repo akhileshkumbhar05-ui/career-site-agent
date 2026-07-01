@@ -1,0 +1,176 @@
+{
+  "candidate": {
+    "name": "Akhilesh Arunkumar Kumbhar",
+    "preferred_search_location": "United States",
+    "willing_to_relocate": true,
+    "salary_filter_enabled": false
+  },
+  "target_roles": [
+    {
+      "role_key": "data_scientist",
+      "titles": [
+        "data scientist",
+        "junior data scientist",
+        "associate data scientist",
+        "applied scientist",
+        "decision scientist"
+      ]
+    },
+    {
+      "role_key": "ml_engineer",
+      "titles": [
+        "machine learning engineer",
+        "ml engineer",
+        "junior machine learning engineer",
+        "applied ml engineer"
+      ]
+    },
+    {
+      "role_key": "ai_engineer",
+      "titles": [
+        "ai engineer",
+        "artificial intelligence engineer",
+        "generative ai engineer",
+        "llm engineer",
+        "applied ai engineer",
+        "ai ml developer",
+        "ai/ml developer",
+        "ml developer",
+        "ai developer",
+        "machine learning developer",
+        "ai ml engineer"
+      ]
+    },
+    {
+      "role_key": "data_analyst",
+      "titles": [
+        "data analyst",
+        "junior data analyst",
+        "analytics analyst",
+        "reporting analyst",
+        "operations analyst"
+      ]
+    },
+    {
+      "role_key": "data_engineer",
+      "titles": [
+        "data engineer",
+        "junior data engineer",
+        "associate data engineer",
+        "analytics engineer",
+        "data analytics engineer",
+        "bi engineer"
+      ]
+    },
+    {
+      "role_key": "business_analyst",
+      "titles": [
+        "business analyst",
+        "business intelligence analyst",
+        "bi analyst",
+        "product analyst"
+      ]
+    },
+    {
+      "role_key": "computer_vision_engineer",
+      "titles": [
+        "computer vision engineer",
+        "cv engineer",
+        "vision engineer",
+        "image processing engineer"
+      ]
+    },
+    {
+      "role_key": "ai_software_engineer",
+      "titles": [
+        "software engineer ai",
+        "software engineer python",
+        "python developer",
+        "ai software engineer",
+        "backend engineer ai"
+      ]
+    }
+  ],
+  "experience_filter": {
+    "target_level": "junior",
+    "preferred_max_years": 1.4,
+    "hard_max_years": 2.0,
+    "allow_unspecified_years": true,
+    "preferred_terms": [
+      "entry level",
+      "junior",
+      "associate",
+      "new grad",
+      "early career",
+      "0-1 years",
+      "0-2 years",
+      "1+ years"
+    ],
+    "senior_terms": [
+      "senior",
+      "staff",
+      "principal",
+      "lead",
+      "manager",
+      "director",
+      "architect"
+    ]
+  },
+  "work_authorization": {
+    "current_status": "F1 OPT",
+    "authorized_to_work_in_us_now": true,
+    "requires_current_sponsorship": false,
+    "requires_future_h1b_sponsorship": true,
+    "opt_valid_until": "2027-06-21",
+    "stem_opt_extension_available_months": 24,
+    "reject_terms": [
+      "us citizen",
+      "u.s. citizen",
+      "citizenship required",
+      "must be a us citizen",
+      "must be a u.s. citizen",
+      "green card required",
+      "permanent resident required",
+      "security clearance",
+      "active clearance",
+      "secret clearance",
+      "top secret",
+      "ts/sci",
+      "dod clearance",
+      "public trust clearance",
+      "unable to sponsor",
+      "will not sponsor",
+      "no sponsorship",
+      "sponsorship not available",
+      "must not require sponsorship now or in the future",
+      "now or in the future"
+    ],
+    "review_terms": [
+      "sponsorship",
+      "work authorization",
+      "employment authorization",
+      "visa"
+    ]
+  },
+  "location_filter": {
+    "us_only": true,
+    "willing_to_relocate": true,
+    "remote_ok": true,
+    "hybrid_ok": true,
+    "onsite_ok": true,
+    "avoid_locations": []
+  },
+  "resume_outputs": {
+    "root_directory": "D:\\Educational Documents\\Resumes",
+    "folder_strategy": "company_name",
+    "filename_pattern": "Akhilesh_Kumbhar_{company}_{role_slug}_{date}.pdf"
+  },
+  "quality_gate": {
+    "reject_non_target_titles": true,
+    "minimum_title_score": 1,
+    "minimum_keyword_score": 0,
+    "reject_senior_roles": true,
+    "reject_clearance_roles": true,
+    "route_sponsorship_ambiguity_to_review": true
+  }
+}

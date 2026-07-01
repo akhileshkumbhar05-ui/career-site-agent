@@ -6,6 +6,8 @@ from app.schemas.tracker import (
     ApplicationRowCreateRequest,
     ApplicationRowResponse,
     ApplicationStatusUpdateRequest,
+    SheetsLogRequest,
+    SheetsLogResponse,
 )
 from app.services.tracker_service import TrackerService
 
@@ -18,6 +20,14 @@ def add_row(
     service: TrackerService = Depends(get_tracker_service),
 ) -> ApplicationRowResponse:
     return service.add_row(payload)
+
+
+@router.post("/log-to-sheets", response_model=SheetsLogResponse)
+def log_to_sheets(
+    payload: SheetsLogRequest,
+    service: TrackerService = Depends(get_tracker_service),
+) -> SheetsLogResponse:
+    return service.log_to_sheets(payload)
 
 
 @router.post("/update-status", response_model=ApplicationRowResponse)

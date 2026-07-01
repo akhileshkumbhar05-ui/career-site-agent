@@ -1,0 +1,194 @@
+{
+  "id": "WF7CareerAgent001",
+  "name": "WF7_Career_Agent_Orchestrator",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "career-agent-schedule",
+      "name": "Career Agent Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agents/run-pipeline",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ worker_id: 'n8n-career-agent', process_limit: 5, render_pdf: true, output_root_override: 'data/outputs/agent_packets', include_recruiter_outreach: true, include_page_watch: true, watch_use_llm: true, discover: { refresh_live: true, include_cached: true, include_rejected: false, max_companies: 12, max_jobs_per_company: 6, enqueue: true, min_match_score: 78, max_enqueue: 10, priority: 40, use_llm: true } }) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "run-career-agent-pipeline",
+      "name": "Run Career Agent Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        540,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const run = $input.first().json;\nconst discovered = run.discovered || {};\nconst jobs = discovered.jobs || [];\nconst processed = run.processed_items || [];\nconst outreach = run.recruiter_outreach || [];\nconst observations = run.page_observations || [];\nconst packetReady = processed.filter((item) => item.status === 'packet_ready');\nconst review = processed.filter((item) => item.status === 'manual_review' || item.status === 'scored');\nconst rejected = processed.filter((item) => item.status === 'rejected');\nconst failed = processed.filter((item) => item.status === 'failed');\nconst enqueuedJobs = jobs.filter((job) => job.queue_id);\nconst shouldNotify = Number(discovered.enqueued_count || 0) > 0 || processed.length > 0 || failed.length > 0;\nconst lines = [\n  '**CareerSite AI agent run**',\n  `Discovered: ${discovered.discovered_count || 0} | Analyzed: ${discovered.analyzed_count || 0} | Enqueued: ${discovered.enqueued_count || 0}`,\n  `Processed: ${processed.length} | Packet ready: ${packetReady.length} | Review: ${review.length} | Rejected: ${rejected.length} | Failed: ${failed.length}`,\n  `Watcher reviewed: ${observations.length} | Recruiter drafts: ${outreach.length}`,\n];\nif (enqueuedJobs.length) {\n  lines.push('', '**High-fit jobs queued**');\n  for (const job of enqueuedJobs.slice(0, 5)) {\n    lines.push(`- ${job.score || 0}% ${job.verdict || ''}: ${job.company || 'Unknown'} | ${job.title || 'Unknown role'} | ${job.queue_id}`);\n  }\n}\nif (processed.length) {\n  lines.push('', '**Processed packets**');\n  for (const item of processed.slice(0, 5)) {\n    const pipeline = item.pipeline_result || {};\n    const exportResult = item.export_result || {};\n    const company = pipeline.company || 'Unknown company';\n    const title = pipeline.title || 'Unknown role';\n    const score = pipeline.base_score === undefined ? 'N/A' : `${pipeline.base_score}%`;\n    const artifact = exportResult.tailored_resume_pdf_path || exportResult.tailored_resume_html_path || exportResult.packet_folder_path || '';\n    lines.push(`- ${item.status}: ${company} | ${title} | ${score}${artifact ? ` | ${artifact}` : ''}`);\n    if (item.error) lines.push(`  Error: ${item.error}`);\n  }\n}\nif (observations.length) {\n  lines.push('', '**Page watcher (third eye)**');\n  for (const obs of observations.slice(0, 5)) {\n    const o = obs.observation || {};\n    const jd = o.jd || {};\n    const sponsor = jd.sponsorship_note ? ` | ${jd.sponsorship_note}` : '';\n    lines.push(`- ${o.page_type || 'unknown'} (${o.engine || 'heuristic'}): ${jd.company || 'Unknown'} | ${jd.role || ''}${sponsor}`);\n  }\n}\nreturn [{ json: { ...run, should_notify: shouldNotify, discord_content: lines.join('\\n').slice(0, 1900) } }];"
+      },
+      "id": "build-agent-run-summary",
+      "name": "Build Agent Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_notify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-agent-run-has-work",
+      "name": "IF Agent Run Has Work",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discord_content }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "discord-agent-run-summary",
+      "name": "Discord Agent Run Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1400,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Career Agent Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Career Agent Schedule": {
+      "main": [
+        [
+          {
+            "node": "Run Career Agent Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Career Agent Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Build Agent Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Agent Run Summary": {
+      "main": [
+        [
+          {
+            "node": "IF Agent Run Has Work",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Agent Run Has Work": {
+      "main": [
+        [
+          {
+            "node": "Discord Agent Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "1"
+}

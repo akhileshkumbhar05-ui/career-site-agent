@@ -5,7 +5,10 @@ pydantic-settings
 python-dotenv
 httpx
 jinja2
-streamlit
+anthropic
+streamlit>=1.27.0
 pytest
 pytest-cov
 beautifulsoup4
+pypdf
+python-docx

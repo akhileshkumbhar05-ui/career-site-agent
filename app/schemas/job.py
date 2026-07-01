@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -45,3 +45,28 @@ class ParsedJD(BaseModel):
     responsibilities: list[str]
     keywords: list[str]
     constraints: list[str]
+    # Raw JD text carried through from JDParseRequest so Claude tailoring
+    # receives the full posting, not just extracted fields.
+    jd_text: Optional[str] = None
+
+
+class JobQualityGateRequest(BaseModel):
+    company: str = ""
+    title: str
+    jd_text: str = ""
+    location: Optional[str] = None
+    source: str = "manual"
+
+
+class JobQualityGateResponse(BaseModel):
+    decision: Literal["pass", "review", "reject"]
+    actionable: bool
+    role_key: Optional[str] = None
+    reasons: list[str] = []
+    blockers: list[str] = []
+    signals: list[str] = []
+    title_score: int = 0
+    keyword_score: int = 0
+    years_required: Optional[float] = None
+    experience_risk: Literal["low", "medium", "high"] = "low"
+    authorization_risk: Literal["low", "medium", "high"] = "low"

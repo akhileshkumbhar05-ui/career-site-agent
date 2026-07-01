@@ -1,9 +1,22 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies import get_canonicalization_service, get_jd_parser_service
-from app.schemas.job import JobLead, OfficialJobResolutionRequest, OfficialJobResolutionResponse, JDParseRequest, ParsedJD
+from app.dependencies import (
+    get_canonicalization_service,
+    get_jd_parser_service,
+    get_job_quality_gate_service,
+)
+from app.schemas.job import (
+    JDParseRequest,
+    JobLead,
+    JobQualityGateRequest,
+    JobQualityGateResponse,
+    OfficialJobResolutionRequest,
+    OfficialJobResolutionResponse,
+    ParsedJD,
+)
 from app.services.canonicalization_service import CanonicalizationService
 from app.services.jd_parser_service import JDParserService
+from app.services.job_quality_gate_service import JobQualityGateService
 
 router = APIRouter()
 
@@ -29,3 +42,11 @@ def parse_jd(
     service: JDParserService = Depends(get_jd_parser_service),
 ) -> ParsedJD:
     return service.parse(payload)
+
+
+@router.post("/quality-gate", response_model=JobQualityGateResponse)
+def quality_gate(
+    payload: JobQualityGateRequest,
+    service: JobQualityGateService = Depends(get_job_quality_gate_service),
+) -> JobQualityGateResponse:
+    return service.evaluate(payload)

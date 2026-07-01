@@ -80,8 +80,16 @@ class ScoringService:
 
         if any(token in lowered_title for token in ["ai engineer", "llm", "genai", "rag"]):
             return "ai_engineer"
+        if any(token in lowered_title for token in ["computer vision", "vision engineer", "image processing"]):
+            return "computer_vision_engineer"
+        if any(token in lowered_title for token in ["software engineer", "python developer", "backend engineer"]):
+            return "ai_software_engineer"
         if any(token in lowered_title for token in ["machine learning", "ml engineer", "research engineer", "computer vision"]):
             return "ml_engineer"
+        if any(token in lowered_title for token in ["business analyst", "business intelligence", "bi analyst", "product analyst"]):
+            return "business_analyst"
+        if any(token in lowered_title for token in ["data analyst", "analytics analyst", "reporting analyst", "operations analyst"]):
+            return "data_analyst"
         if any(token in lowered_title for token in ["data scientist", "analytics", "applied scientist"]):
             return "data_scientist"
 

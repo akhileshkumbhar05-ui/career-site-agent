@@ -1,0 +1,43 @@
+{
+  "candidate": {
+    "full_name": "Akhilesh Arunkumar Kumbhar",
+    "legal_first_name": "Akhilesh Arunkumar",
+    "legal_last_name": "Kumbhar",
+    "first_name": "Akhilesh Arunkumar",
+    "last_name": "Kumbhar",
+    "preferred_name": "Akhilesh",
+    "email": "akhileshkumbhar0405@gmail.com",
+    "phone": "+1 (346) 592-3971",
+    "city": "Arlington",
+    "state": "TX",
+    "country": "United States",
+    "linkedin": "LinkedIn",
+    "linkedin_url": "https://www.linkedin.com/in/akhilesh-kumbhar-aak",
+    "github": "GitHub",
+    "github_url": "https://github.com/akhileshkumbhar05-ui"
+  },
+  "work_authorization": {
+    "authorized_to_work_in_united_states": true,
+    "current_status": "F1 OPT",
+    "requires_current_sponsorship": false,
+    "requires_future_sponsorship": true,
+    "opt_valid_until": "2027-06-21",
+    "stem_opt_extension_available_months": 24,
+    "standard_explanation": "Currently authorized to work in the United States on F1 OPT until June 21, 2027. STEM OPT extension is available for up to 24 additional months. H1B sponsorship would be required to continue employment beyond OPT/STEM OPT."
+  },
+  "preferences": {
+    "willing_to_relocate": true,
+    "salary_filter_enabled": false,
+    "target_level": "junior"
+  },
+  "resume_storage": {
+    "root_directory": "D:\\Educational Documents\\Resumes",
+    "base_resume_pdf": "D:\\Resume Revamp Projects\\AgenticAI_Projects\\career-site-agent\\Profile\\Akhilesh_Kumbhar_Resume_May_24_2026.pdf",
+    "company_folder_strategy": "Use an existing company folder if present; otherwise create a new folder named after the company."
+  },
+  "automation_boundary": {
+    "allow_prefill": true,
+    "allow_final_submit": false,
+    "submit_instruction": "Application portals may be prefilled, but final review and submission must remain manual."
+  }
+}

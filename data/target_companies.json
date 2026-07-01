@@ -1,12 +1,146 @@
 [
   {
     "company": "Cohere",
-    "ats_type": "greenhouse",
-    "url": "https://job-boards.greenhouse.io/cohere"
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/cohere",
+    "ashby_slug": "cohere"
+  },
+  {
+    "company": "Notion",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/notion",
+    "ashby_slug": "notion"
+  },
+  {
+    "company": "Cursor",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/cursor",
+    "ashby_slug": "cursor"
+  },
+  {
+    "company": "Perplexity",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/perplexity",
+    "ashby_slug": "perplexity"
+  },
+  {
+    "company": "Ramp",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/ramp",
+    "ashby_slug": "ramp"
+  },
+  {
+    "company": "OpenAI",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/openai",
+    "ashby_slug": "openai"
+  },
+  {
+    "company": "Brain Co",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/brainco",
+    "ashby_slug": "brainco"
+  },
+  {
+    "company": "SentiLink",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/sentilink",
+    "ashby_slug": "sentilink"
   },
   {
     "company": "Scale AI",
     "ats_type": "greenhouse",
     "url": "https://job-boards.greenhouse.io/scaleai"
+  },
+  {
+    "company": "Cloudflare",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/cloudflare"
+  },
+  {
+    "company": "GumGum",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/gumgum"
+  },
+  {
+    "company": "Attentive",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/attentive"
+  },
+  {
+    "company": "Databricks",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/databricks"
+  },
+  {
+    "company": "Mercor",
+    "ats_type": "ashby",
+    "url": "https://jobs.ashbyhq.com/mercor",
+    "ashby_slug": "mercor"
+  },
+  {
+    "company": "Stripe",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/stripe"
+  },
+  {
+    "company": "Robinhood",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/robinhood"
+  },
+  {
+    "company": "Chime",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/chime"
+  },
+  {
+    "company": "Figma",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/figma"
+  },
+  {
+    "company": "Coinbase",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/coinbase"
+  },
+  {
+    "company": "Reddit",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/reddit"
+  },
+  {
+    "company": "Pinterest",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/pinterest"
+  },
+  {
+    "company": "Lyft",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/lyft"
+  },
+  {
+    "company": "Airbnb",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/airbnb"
+  },
+  {
+    "company": "DoorDash",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/doordashusa"
+  },
+  {
+    "company": "Discord",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/discord"
+  },
+  {
+    "company": "Affirm",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/affirm"
+  },
+  {
+    "company": "Instacart",
+    "ats_type": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/instacart"
   }
 ]

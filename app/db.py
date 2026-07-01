@@ -1,12 +1,28 @@
 from pathlib import Path
+import os
 import sqlite3
 
-DB_PATH = Path("data/career_site_agent.db")
+DEFAULT_DB_PATH = Path("data/career_site_agent.db")
+MEMORY_DB_URI = "file:career_site_agent_test?mode=memory&cache=shared"
+_MEMORY_DB_ANCHOR: sqlite3.Connection | None = None
+
+
+def get_db_path() -> Path:
+    return Path(os.getenv("CAREER_SITE_AGENT_DB_PATH", str(DEFAULT_DB_PATH)))
 
 
 def get_db_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    global _MEMORY_DB_ANCHOR
+
+    db_path = get_db_path()
+    if str(db_path) == ":memory:":
+        if _MEMORY_DB_ANCHOR is None:
+            _MEMORY_DB_ANCHOR = sqlite3.connect(MEMORY_DB_URI, uri=True, check_same_thread=False)
+            _MEMORY_DB_ANCHOR.row_factory = sqlite3.Row
+        conn = sqlite3.connect(MEMORY_DB_URI, uri=True, check_same_thread=False)
+    else:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -33,6 +49,44 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (company_applied, role)
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS job_queue (
+                queue_id TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL UNIQUE,
+                source_job_id TEXT NOT NULL,
+                company TEXT NOT NULL,
+                title TEXT NOT NULL,
+                jd_text TEXT NOT NULL,
+                discovered_url TEXT NOT NULL,
+                source TEXT NOT NULL,
+                posted_at TEXT,
+                location TEXT,
+                status TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 100,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                locked_by TEXT,
+                locked_until TEXT,
+                result_json TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_job_queue_claim
+            ON job_queue(status, priority, created_at)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_job_queue_source_job_id
+            ON job_queue(source_job_id)
             """
         )
         conn.commit()

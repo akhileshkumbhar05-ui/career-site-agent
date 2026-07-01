@@ -10,6 +10,36 @@ htmlcov/
 .vscode/
 .idea/
 *.log
+*_API_Key.txt
+google_cloud/client_secret_*.json
+n8n/backups/
+n8n/import_staging/
+data/test_*.db*
 data/outputs/*
 !data/outputs/.gitkeep
 ui/.streamlit/
+.codex_npm/
+frontend/node_modules/
+frontend/dist/
+Profile/
+
+# Local state, caches, and run artifacts
+data/*.db
+data/*.db-journal
+data/logs/
+data/cache/
+data/runtime/
+data/tailoring_drafts/
+data/tailoring_review_audit.jsonl
+data/manual_copilot/
+data/manual_copilot_tests/
+data/pytest_tmp_copilot/
+.pytest_tmp*/
+.claude/settings.local.json
+
+# Personal documents and old handoff snapshots (root-level only)
+/*.pdf
+/*.docx
+/*.zip
+/files/
+/careersite_agent_updates/

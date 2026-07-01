@@ -1,0 +1,134 @@
+{
+  "name": "WF3_Confirmed_Application_To_Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "confirmed-application",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "confirmed-application",
+      "name": "Confirmed Application Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "confirmed-application"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/tracker/log-to-sheets",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "company", "value": "={{ $json.body.company || $json.body.company_applied || $json.company || $json.company_applied }}" },
+            { "name": "role", "value": "={{ $json.body.role || $json.body.title || $json.role || $json.title }}" },
+            { "name": "date", "value": "={{ $json.body.date || $json.body.application_date || $json.date || $json.application_date || '' }}" },
+            { "name": "salary", "value": "={{ $json.body.salary || $json.body.salary_quoted_while_applying || $json.salary || $json.salary_quoted_while_applying || 'N/A' }}" },
+            { "name": "job_posted_on", "value": "={{ $json.body.job_posted_on || $json.body.source || $json.job_posted_on || $json.source || 'Unknown' }}" },
+            { "name": "applied_using", "value": "={{ $json.body.applied_using || $json.applied_using || 'Company Website' }}" },
+            { "name": "status", "value": "={{ $json.body.status || $json.status || 'Applied' }}" },
+            { "name": "link", "value": "={{ $json.body.link || $json.body.official_url || $json.body.discovered_url || $json.link || $json.official_url || $json.discovered_url || '' }}" },
+            { "name": "job_id", "value": "={{ $json.body.job_id || $json.job_id || '' }}" },
+            { "name": "base_match_percent", "value": "={{ $json.body.base_match_percent || $json.body.base_score || $json.base_match_percent || $json.base_score || null }}" },
+            { "name": "tailored_match_percent", "value": "={{ $json.body.tailored_match_percent || $json.body.tailored_score || $json.tailored_match_percent || $json.tailored_score || null }}" },
+            { "name": "resume_version_used", "value": "={{ $json.body.resume_version_used || $json.body.recommended_resume_version || $json.resume_version_used || $json.recommended_resume_version || 'base_resume_v1' }}" },
+            { "name": "notes", "value": "={{ $json.body.notes || $json.body.decision_reason || $json.notes || $json.decision_reason || '' }}" }
+          ]
+        },
+        "options": { "timeout": 45000 }
+      },
+      "id": "log-to-sheets",
+      "name": "Log to Sheets via FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-sheets-success",
+      "name": "IF Sheets Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**Application logged to Google Sheets**\\nRow: ' + ($json.target_row || 'unknown') + '\\nMode: ' + ($json.mode || 'unknown') }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-sheets-success",
+      "name": "Discord Sheets Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 210]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_DISCORD_WEBHOOK_URL",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ '**Google Sheets logging failed**\\n' + ($json.message || 'No error message returned') }}"
+            }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "discord-sheets-failure",
+      "name": "Discord Sheets Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1040, 390]
+    }
+  ],
+  "connections": {
+    "Confirmed Application Webhook": {
+      "main": [[{ "node": "Log to Sheets via FastAPI", "type": "main", "index": 0 }]]
+    },
+    "Log to Sheets via FastAPI": {
+      "main": [[{ "node": "IF Sheets Success", "type": "main", "index": 0 }]]
+    },
+    "IF Sheets Success": {
+      "main": [
+        [{ "node": "Discord Sheets Success", "type": "main", "index": 0 }],
+        [{ "node": "Discord Sheets Failure", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "1"
+}

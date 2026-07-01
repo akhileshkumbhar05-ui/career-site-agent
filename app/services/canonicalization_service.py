@@ -43,7 +43,7 @@ class CanonicalizationService:
         if official_status:
             confidence = 0.9 if ats_type != "unknown" else 0.8
             status = "live"
-        elif any(board in domain for board in ["linkedin", "indeed", "ziprecruiter", "jobright"]):
+        elif any(board in domain for board in ["linkedin", "indeed", "ziprecruiter"]):
             confidence = 0.35
             status = "aggregator_only"
 
