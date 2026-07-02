@@ -28,7 +28,7 @@ These are always left to you and are never auto-filled: EEO/demographic, citizen
 3. Choose `Load unpacked` and select this folder:
 
 ```text
-D:\Resume Revamp Projects\AgenticAI_Projects\career-site-agent\browser_assist\ats_autofill_extension
+....\career-site-agent\browser_assist\ats_autofill_extension
 ```
 
 After updating the code, click the reload icon on the extension card to pick up changes.
