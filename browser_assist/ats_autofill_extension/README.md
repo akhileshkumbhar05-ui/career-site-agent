@@ -47,7 +47,7 @@ Tailoring defaults are stored locally by role family. Each job can override them
 Tailored resume artifacts and apply plans are written under:
 
 ```text
-D:\Resume Revamp Projects\AgenticAI_Projects\career-site-agent\data\outputs\autofill_packets
+....\career-site-agent\data\outputs\autofill_packets
 ```
 
 ## Notes
