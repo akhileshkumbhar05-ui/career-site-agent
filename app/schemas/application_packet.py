@@ -44,6 +44,7 @@ class ApplicationPacketExportRequest(BaseModel):
     recruiter_subject: str = ""
     recruiter_body: str = ""
     connection_note: str = ""
+    cover_letter_text: str = ""
     render_pdf: bool = False
 
 
@@ -62,6 +63,7 @@ class ApplicationPacketExportResponse(BaseModel):
     checklist_path: str
     outreach_path: str
     jd_path: str
+    cover_letter_path: str = ""
     apply_plan_path: str = ""
     ats_answers_path: str = ""
     files_written: list[str]

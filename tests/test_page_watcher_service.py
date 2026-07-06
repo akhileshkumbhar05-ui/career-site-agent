@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.schemas.ats_autofill import AutofillField, WatcherObserveRequest
 from app.services.ats_autofill_service import ATSAutofillService
 from app.services.page_watcher_service import PageWatcherService
@@ -94,3 +96,57 @@ def test_observe_detects_confirmation_page() -> None:
     )
 
     assert result.page_type == "confirmation"
+
+
+def test_observe_uses_matched_apply_plan_cover_letter(tmp_path) -> None:
+    packet_dir = tmp_path / "packets" / "example"
+    packet_dir.mkdir(parents=True)
+    (packet_dir / "apply_plan.json").write_text(
+        json.dumps(
+            {
+                "job": {
+                    "company": "Example Bank",
+                    "role": "Operations Data Analyst",
+                    "official_url": "https://careers.example.com/jobs/17893342-operations-data-analyst/apply",
+                },
+                "resume": {},
+                "cover_letter": {
+                    "requested": True,
+                    "body": "Dear hiring team, I am interested in this analytics role.",
+                },
+                "ats_answer_bank": {
+                    "candidate": {
+                        "full_name": "Akhilesh Arunkumar Kumbhar",
+                        "first_name": "Akhilesh",
+                        "last_name": "Kumbhar",
+                        "email": "akhilesh@example.com",
+                    },
+                    "work_authorization": {},
+                    "preferences": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = PageWatcherService(
+        autofill=ATSAutofillService(apply_plan_roots=[str(tmp_path / "packets")]),
+        api_key="",
+    )
+
+    result = service.observe(
+        WatcherObserveRequest(
+            url="https://careers.example.com/jobs/17893342-operations-data-analyst/apply",
+            page_title="Apply",
+            page_text="Application form for Operations Data Analyst.",
+            form_fields=[
+                _field("email", "Email", input_type="email"),
+                _field("cover", "Cover Letter", input_type="textarea", tag="textarea"),
+            ],
+            use_llm=False,
+        )
+    )
+
+    by_id = {item.field_id: item for item in result.field_suggestions}
+    assert by_id["email"].value == "akhilesh@example.com"
+    assert by_id["cover"].action == "fill_text"
+    assert "analytics role" in by_id["cover"].value

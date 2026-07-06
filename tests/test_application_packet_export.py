@@ -75,6 +75,7 @@ def test_application_packet_export_writes_expected_files():
             jd_text="Job description text.",
             recruiter_subject="Interest in the role",
             recruiter_body="Hi, I am interested.",
+            cover_letter_text="Dear hiring team,\n\nI am interested in this role because it matches my Python, SQL, and analytics work.\n",
         )
     )
 
@@ -96,6 +97,9 @@ def test_application_packet_export_writes_expected_files():
     assert "Job description text." in Path(response.jd_path).read_text(encoding="utf-8")
     assert "Interest in the role" in Path(response.outreach_path).read_text(encoding="utf-8")
     assert "LinkedIn connection note" in Path(response.outreach_path).read_text(encoding="utf-8")
+    assert response.cover_letter_path
+    assert "I am interested in this role" in Path(response.cover_letter_path).read_text(encoding="utf-8")
+    assert "Cover Letter" in Path(response.ats_answers_path).read_text(encoding="utf-8")
 
     apply_plan = json.loads(Path(response.apply_plan_path).read_text(encoding="utf-8"))
     assert apply_plan["human_control"]["allow_final_submit"] is False
@@ -105,6 +109,9 @@ def test_application_packet_export_writes_expected_files():
     assert apply_plan["resume"]["tailored_resume_docx_path"] == apply_plan["resume"]["tailored_resume_path"]
     assert apply_plan["resume"]["tailored_resume_html_path"].startswith(str(tmp_path / "packet_override_root"))
     assert apply_plan["resume"]["intended_tailored_resume_pdf_path"].endswith(".pdf")
+    assert apply_plan["cover_letter"]["requested"] is True
+    assert apply_plan["cover_letter"]["path"] == response.cover_letter_path
+    assert "Python, SQL, and analytics" in apply_plan["cover_letter"]["body"]
     assert apply_plan["ats_answer_bank"]["candidate"]["legal_first_name"] == "Akhilesh Arunkumar"
     assert apply_plan["ats_answer_bank"]["candidate"]["legal_last_name"] == "Kumbhar"
     assert apply_plan["ats_answer_bank"]["candidate"]["linkedin_url"] == "LinkedIn"

@@ -573,7 +573,15 @@ class ATSAutofillService:
             return self._build_field_match(field, preference)
 
         if "cover letter" in normalized:
-            return self._match(field, "manual_review", reason="Cover letter fields need job-specific review.")
+            cover_letter = self._candidate(
+                "cover_letter.body",
+                answers,
+                0.9,
+                "Matched cover letter field from the prepared application plan.",
+            )
+            if cover_letter and field.input_type not in {"file", "checkbox", "radio_group"}:
+                return self._build_field_match(field, cover_letter)
+            return self._match(field, "manual_review", reason="Cover letter fields need a prepared job-specific draft.")
         if field.input_type == "checkbox":
             return self._match(field, "manual_review", reason="Checkbox attestations are left unchecked by default.")
 
@@ -744,6 +752,7 @@ class ATSAutofillService:
         work_auth = bank.get("work_authorization") or {}
         preferences = bank.get("preferences") or {}
         resume = apply_plan.get("resume") or {}
+        cover_letter = apply_plan.get("cover_letter") or {}
 
         full_name = str(candidate.get("full_name") or "")
         parts = full_name.split()
@@ -796,6 +805,7 @@ class ATSAutofillService:
             "resume.tailored_resume_path": str(
                 resume.get("tailored_resume_path") or resume.get("base_resume_pdf") or ""
             ),
+            "cover_letter.body": str(cover_letter.get("body") or ""),
         }
         return {key: value for key, value in answers.items() if value}
 

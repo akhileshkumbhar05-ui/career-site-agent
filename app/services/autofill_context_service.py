@@ -186,6 +186,7 @@ class AutofillContextService:
                 summary_text=tailored.summary_text,
                 rewritten_bullets=tailored.rewritten_bullets or [],
                 connection_note=tailored.connection_note or "",
+                cover_letter_text=tailored.cover_letter_text or "",
                 jd_text=page_text,
                 render_pdf=payload.render_pdf,
             )

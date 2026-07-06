@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,11 @@ class _ReviewTailorer:
             ],
             skill_gaps=["SAS"],
             connection_note="Interested in the Operations Data Analyst role.",
+            cover_letter_text=(
+                "Dear hiring team,\n\n"
+                "I am interested in this Operations Data Analyst role because it aligns with my Python, SQL, "
+                "Power BI, and operational analytics experience."
+            ),
         )
 
 
@@ -177,9 +183,55 @@ def test_finalize_renders_after_review_and_exposes_docx_download(tmp_path):
     assert result.pdf_ready is False
     assert Path(result.prepared_resume_docx_path).exists()
     assert service.download_path(draft.draft_id, "docx") == Path(result.prepared_resume_docx_path)
+    assert result.prepared_apply_plan_path.endswith("apply_plan.json")
+    assert result.apply_url == "https://careers.example.com/jobs/17893342-operations-data-analyst"
     audit = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
     assert "draft_created" in audit
     assert "draft_finalized" in audit
+
+
+def test_finalize_persists_reviewed_cover_letter_into_apply_plan(tmp_path):
+    service = _service(tmp_path)
+    draft = service.create_draft(
+        TailoringDraftRequest(
+            url="https://careers.example.com/jobs/17893342-operations-data-analyst",
+            page_title="Operations Data Analyst | Example Bank",
+            page_text="""
+            Operations Data Analyst
+            Responsibilities include collecting, analyzing, and visualizing operational data,
+            preparing reports, improving business processes, and communicating recommendations.
+            Requirements: Python, SQL, Tableau, reporting, analytics, and stakeholder communication.
+            One to two years of analytics experience. Location: Las Vegas, Nevada, United States.
+            """,
+            company="Example Bank",
+            role="Operations Data Analyst",
+            force_prepare=True,
+            render_pdf=False,
+            tailoring_preferences=TailoringPreferences(
+                preset="business_impact",
+                include_cover_letter=True,
+            ),
+        )
+    )
+
+    result = service.finalize(
+        TailoringFinalizeRequest(
+            draft_id=draft.draft_id,
+            summary_accepted=True,
+            summary_text=draft.summary_proposed,
+            bullets=[],
+            project_ids=["careersite_agent"],
+            cover_letter_text=draft.cover_letter_text,
+            output_root_override=str(tmp_path / "final_cover"),
+            render_pdf=False,
+        )
+    )
+
+    apply_plan = json.loads(Path(result.prepared_apply_plan_path).read_text(encoding="utf-8"))
+    assert result.cover_letter_path
+    assert Path(result.cover_letter_path).exists()
+    assert apply_plan["cover_letter"]["requested"] is True
+    assert "Operations Data Analyst" in apply_plan["cover_letter"]["body"]
 
 
 def test_finalize_allows_research_without_projects(tmp_path):

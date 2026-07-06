@@ -36,6 +36,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.action === "CAREERSITE_ARM_APPLY_ASSISTANT") {
+    armApplyAssistant(message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (message?.action === "CAREERSITE_AUTOPILOT_CONTEXT") {
+    postLocalJson("/autofill/autopilot/context", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message, enabled: false }));
+    return true;
+  }
+
+  if (message?.action === "CAREERSITE_AUTOPILOT_RESULT") {
+    postLocalJson("/autofill/autopilot/result", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message, recorded: false }));
+    return true;
+  }
+
   return false;
 });
 
@@ -80,4 +101,17 @@ async function downloadLocalFile(path) {
     }
   }
   throw new Error(`Download is unavailable. Tried ${errors.join("; ")}`);
+}
+
+async function armApplyAssistant(payload) {
+  const result = await postLocalJson("/autofill/autopilot/arm", {
+    ...payload,
+    open_browser: false,
+  });
+  if (!result.armed) return result;
+  const targetUrl = result.target_url || payload.url;
+  if (targetUrl) {
+    await chrome.tabs.create({ url: targetUrl });
+  }
+  return { ...result, opened_browser: Boolean(targetUrl) };
 }

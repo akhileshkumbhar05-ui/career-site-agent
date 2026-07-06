@@ -199,6 +199,41 @@ def test_profile_apply_plan_enriches_job_without_packet(tmp_path) -> None:
     assert apply_plan["ats_answer_bank"]["candidate"]["email"] == "akhileshkumbhar0405@gmail.com"
 
 
+def test_cover_letter_field_fills_only_from_prepared_apply_plan() -> None:
+    apply_plan = sample_apply_plan()
+    apply_plan["cover_letter"] = {
+        "requested": True,
+        "body": "Dear hiring team, I am interested in this role because it matches my analytics background.",
+    }
+    html = """
+    <form>
+      <label for="cover">Cover Letter</label>
+      <textarea id="cover" name="cover_letter"></textarea>
+    </form>
+    """
+
+    plan = ATSAutofillService().build_plan_from_html(html, apply_plan)
+
+    assert plan.fillable_count == 1
+    assert plan.matches[0].action == "fill_text"
+    assert plan.matches[0].answer_key == "cover_letter.body"
+    assert "analytics background" in plan.matches[0].answer_value
+
+
+def test_cover_letter_field_stays_manual_without_prepared_draft() -> None:
+    html = """
+    <form>
+      <label for="cover">Cover Letter</label>
+      <textarea id="cover" name="cover_letter"></textarea>
+    </form>
+    """
+
+    plan = ATSAutofillService().build_plan_from_html(html, sample_apply_plan())
+
+    assert plan.manual_count == 1
+    assert plan.matches[0].action == "manual_review"
+
+
 def test_context_matches_existing_apply_plan_by_job_id(tmp_path) -> None:
     profile_path = tmp_path / "application_profile.json"
     profile_path.write_text(json.dumps({"candidate": {}, "work_authorization": {}, "preferences": {}}), encoding="utf-8")

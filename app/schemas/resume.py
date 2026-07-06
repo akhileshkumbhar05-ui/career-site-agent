@@ -47,6 +47,7 @@ class TailoringPreferences(BaseModel):
     )
     custom_instructions: str = Field(default="", max_length=600)
     include_connection_note: bool = True
+    include_cover_letter: bool = False
     bullet_counts: TailoringBulletCounts = Field(default_factory=TailoringBulletCounts)
 
 
@@ -77,6 +78,7 @@ class ResumeTailorResponse(BaseModel):
     rewritten_bullets: Optional[list[dict]] = None   # [{"original": ..., "rewritten": ..., "project_id": ...}]
     skill_gaps: list[str] = []
     connection_note: Optional[str] = None            # LinkedIn connection note ≤ 299 chars
+    cover_letter_text: Optional[str] = None
 
 
 class ResumeDecisionRequest(BaseModel):

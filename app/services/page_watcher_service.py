@@ -128,10 +128,14 @@ class PageWatcherService:
         page_text = (payload.page_text or "")[: payload.max_page_text_chars]
         fields = list(payload.form_fields)
 
-        apply_plan = self.autofill.build_profile_apply_plan(
-            payload.url,
-            {"company": payload.company, "title": payload.role, "discovered_url": payload.url},
-        )
+        matched_context = self.autofill.load_context_for_url(payload.url)
+        if matched_context.source == "matched_apply_plan":
+            apply_plan = matched_context.apply_plan
+        else:
+            apply_plan = self.autofill.build_profile_apply_plan(
+                payload.url,
+                {"company": payload.company, "title": payload.role, "discovered_url": payload.url},
+            )
         heuristic_plan = self.autofill.build_plan(fields, apply_plan, source_url=payload.url)
         suggestions = [self._suggestion_from_match(match, source="heuristic") for match in heuristic_plan.matches]
 

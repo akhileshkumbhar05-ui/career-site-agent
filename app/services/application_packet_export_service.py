@@ -38,6 +38,7 @@ class ApplicationPacketExportService:
         checklist_path = packet_folder / "form_fill_checklist.md"
         outreach_path = packet_folder / "recruiter_outreach.txt"
         jd_path = packet_folder / "job_description.txt"
+        cover_letter_path = packet_folder / "cover_letter.txt"
         summary_path = packet_folder / "application_packet.md"
         apply_plan_path = packet_folder / "apply_plan.json"
         ats_answers_path = packet_folder / "ats_answer_bank.md"
@@ -125,6 +126,7 @@ class ApplicationPacketExportService:
             "changes_summary": payload.changes_summary,
             "summary_text": payload.summary_text,
             "rewritten_bullets": payload.rewritten_bullets,
+            "cover_letter_text": payload.cover_letter_text,
             "quality_passed": quality_passed,
             "quality_checks": quality_checks,
         }
@@ -135,10 +137,14 @@ class ApplicationPacketExportService:
         apply_plan["resume"]["tailored_resume_html_path"] = str(resume_html_path)
         apply_plan["resume"]["intended_tailored_resume_pdf_path"] = str(tailored_resume_path)
         apply_plan["resume"]["tailored_resume_pdf_path"] = pdf_path or ""
+        if payload.cover_letter_text.strip():
+            apply_plan["cover_letter"]["path"] = str(cover_letter_path)
         apply_plan_path.write_text(json.dumps(apply_plan, indent=2), encoding="utf-8")
         ats_answers_path.write_text(self._build_ats_answers(payload), encoding="utf-8")
         checklist_path.write_text(self._build_checklist(payload), encoding="utf-8")
         outreach_path.write_text(self._build_outreach(payload), encoding="utf-8")
+        if payload.cover_letter_text.strip():
+            cover_letter_path.write_text(payload.cover_letter_text.strip() + "\n", encoding="utf-8")
         jd_path.write_text(payload.jd_text or "No job description text was provided.", encoding="utf-8")
         summary_path.write_text(self._build_summary(payload, selected_projects), encoding="utf-8")
 
@@ -153,6 +159,8 @@ class ApplicationPacketExportService:
             str(jd_path),
             str(summary_path),
         ]
+        if payload.cover_letter_text.strip():
+            files.insert(-2, str(cover_letter_path))
         if pdf_path:
             files.insert(1, pdf_path)
 
@@ -171,6 +179,7 @@ class ApplicationPacketExportService:
             checklist_path=str(checklist_path),
             outreach_path=str(outreach_path),
             jd_path=str(jd_path),
+            cover_letter_path=str(cover_letter_path) if payload.cover_letter_text.strip() else "",
             apply_plan_path=str(apply_plan_path),
             ats_answers_path=str(ats_answers_path),
             files_written=files,
@@ -747,6 +756,16 @@ class ApplicationPacketExportService:
                     lines.append(f"- {key.replace('_', ' ').title()}: {value}")
             lines.append("")
 
+        if payload.cover_letter_text.strip():
+            lines.extend(
+                [
+                    "## Cover Letter",
+                    "",
+                    payload.cover_letter_text.strip(),
+                    "",
+                ]
+            )
+
         return "\n".join(lines).rstrip() + "\n"
 
     @staticmethod
@@ -778,6 +797,11 @@ class ApplicationPacketExportService:
                 "summary_text": payload.summary_text,
                 "rewritten_bullets": payload.rewritten_bullets,
                 "changes_summary": payload.changes_summary,
+            },
+            "cover_letter": {
+                "requested": bool(payload.cover_letter_text.strip()),
+                "body": payload.cover_letter_text.strip(),
+                "path": "",
             },
             "ats_answer_bank": packet.ats_answer_bank,
             "application_steps": packet.application_steps,

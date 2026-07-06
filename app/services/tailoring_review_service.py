@@ -125,6 +125,7 @@ class TailoringReviewService:
             "publications": [item.model_dump() for item in publications],
             "skill_gaps": tailored.skill_gaps,
             "connection_note": tailored.connection_note or "",
+            "cover_letter_text": tailored.cover_letter_text or "",
             "changes_summary": tailored.changes_summary,
             "finalized": {},
         }
@@ -183,6 +184,7 @@ class TailoringReviewService:
                 summary_text=summary,
                 rewritten_bullets=rewritten,
                 connection_note=payload.connection_note.strip() or record.get("connection_note", ""),
+                cover_letter_text=self._cover_letter_for_finalize(record, payload),
                 jd_text=job["page_text"],
                 render_pdf=payload.render_pdf,
             )
@@ -191,6 +193,8 @@ class TailoringReviewService:
             "created_at": datetime.now(UTC).isoformat(),
             "docx_path": export.tailored_resume_docx_path,
             "pdf_path": export.tailored_resume_pdf_path or "",
+            "apply_plan_path": export.apply_plan_path,
+            "cover_letter_path": export.cover_letter_path,
             "quality_passed": export.quality_passed,
             "quality_checks": export.quality_checks,
             "project_ids": payload.project_ids,
@@ -227,6 +231,9 @@ class TailoringReviewService:
             ),
             prepared_resume_docx_path=export.tailored_resume_docx_path,
             prepared_resume_pdf_path=export.tailored_resume_pdf_path or "",
+            prepared_apply_plan_path=export.apply_plan_path,
+            apply_url=job["url"],
+            cover_letter_path=export.cover_letter_path,
             message="Final resume rendered locally. Use Download DOCX or Download PDF to choose a save location.",
         )
 
@@ -271,6 +278,7 @@ class TailoringReviewService:
             publications=record.get("publications", []),
             skill_gaps=record.get("skill_gaps", []),
             connection_note=record.get("connection_note", ""),
+            cover_letter_text=record.get("cover_letter_text", ""),
             changes_summary=record.get("changes_summary", []),
             resume_preview_html=self._build_resume_preview_html(record),
             message="Claude draft is ready for review. No resume file has been generated yet.",
@@ -385,6 +393,27 @@ class TailoringReviewService:
             summary = payload.summary_text.strip()
         self._validate_edit(summary, record["summary_original"], max_length=1400)
         return summary, rewritten
+
+    def _cover_letter_for_finalize(self, record: dict[str, Any], payload: TailoringFinalizeRequest) -> str:
+        if not payload.cover_letter_accepted:
+            return ""
+        text = (payload.cover_letter_text.strip() or str(record.get("cover_letter_text") or "").strip())
+        if not text:
+            return ""
+        if len(text) > 4000:
+            raise HTTPException(status_code=400, detail="Cover letter is too long.")
+        profile_context = ProfileEvidenceService().build_prompt_context(max_chars=60000)
+        master_text = self.master_resume_path.read_text(encoding="utf-8") + "\n" + str(profile_context)
+        supported_numbers = set(re.findall(r"\d+(?:\.\d+)?%?", master_text))
+        unsupported = sorted(set(re.findall(r"\d+(?:\.\d+)?%?", text)) - supported_numbers)
+        if unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail="Cover letter contains unsupported metrics: " + ", ".join(unsupported),
+            )
+        if ProfileEvidenceService._sanitize(text) != text:
+            raise HTTPException(status_code=400, detail="Cover letter contains credential-like or secret content.")
+        return text
 
     def _build_resume_preview_html(
         self,

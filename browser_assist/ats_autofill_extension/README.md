@@ -54,4 +54,4 @@ Tailored resume artifacts and apply plans are written under:
 
 - The watcher only calls the API on pages that look like job/application pages (ATS domains, pages with form fields, or pages with job-description text), so it does not fire on ordinary browsing.
 - All page understanding and field answering happen server-side via Claude; the content script only reads the DOM, renders suggestions, and fills on click.
-- The legacy toolbar popup and the pre-armed "autopilot packet" flow have been removed. The watcher is the only mechanism.
+- Third Eye can now arm an apply assistant after you approve a tailored packet. It opens the application URL and fills only safe matched fields. Final submit always stays manual.

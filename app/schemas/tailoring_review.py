@@ -49,6 +49,7 @@ class TailoringDraftResponse(BaseModel):
     publications: list[TailoringDraftPublication] = Field(default_factory=list)
     skill_gaps: list[str] = Field(default_factory=list)
     connection_note: str = ""
+    cover_letter_text: str = ""
     changes_summary: list[str] = Field(default_factory=list)
     resume_preview_html: str = ""
     message: str
@@ -70,6 +71,8 @@ class TailoringFinalizeRequest(BaseModel):
     publication_ids: list[str] = Field(default_factory=list, max_length=2)
     bullet_counts: TailoringBulletCounts = Field(default_factory=TailoringBulletCounts)
     connection_note: str = Field(default="", max_length=299)
+    cover_letter_accepted: bool = True
+    cover_letter_text: str = Field(default="", max_length=4000)
     output_root_override: str = ""
     render_pdf: bool = True
 
@@ -84,6 +87,9 @@ class TailoringFinalizeResponse(BaseModel):
     pdf_download_path: str = ""
     prepared_resume_docx_path: str
     prepared_resume_pdf_path: str = ""
+    prepared_apply_plan_path: str = ""
+    apply_url: str = ""
+    cover_letter_path: str = ""
     message: str
 
 

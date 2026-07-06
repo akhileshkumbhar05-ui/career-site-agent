@@ -80,6 +80,15 @@
         },
       });
       if (result && !result.error && result.page_type) {
+        const autopilot = await sendRuntimeMessage({
+          action: "CAREERSITE_AUTOPILOT_CONTEXT",
+          payload: {
+            url: window.location.href,
+            page_title: document.title || "",
+            page_text: pageText,
+          },
+        });
+        if (autopilot && !autopilot.error) result.autopilot = autopilot;
         renderWatcherPanel(result);
       }
     } finally {
@@ -288,6 +297,10 @@
               <input data-cs="tailor-note" type="checkbox" checked>
               Include recruiter connection note
             </label>
+            <label style="display:flex;align-items:center;gap:5px;color:#e0e0e0;font-size:11px;margin-bottom:7px;">
+              <input data-cs="tailor-cover-letter" type="checkbox">
+              Include cover letter draft
+            </label>
             <label style="display:block;color:#b3b3b3;font-size:11px;">
               Additional direction
               <textarea data-cs="tailor-instructions" maxlength="600" rows="3" placeholder="Example: keep my original project bullets unless a rewrite clearly improves relevance." style="display:block;width:100%;margin-top:3px;padding:6px;resize:vertical;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;font:11px/1.4 Arial,sans-serif;box-sizing:border-box;"></textarea>
@@ -367,6 +380,29 @@
 
     document.documentElement.appendChild(panel);
     loadTailoringDefaults(panel, (jd && jd.role) || "");
+    if (result.autopilot?.enabled && fillable.length) {
+      const filled = applyWatcherSuggestions(fillable, false);
+      const status = panel.querySelector('[data-cs="fill-status"]');
+      if (status) status.textContent = `Apply assistant filled ${filled} safe field${filled === 1 ? "" : "s"}. Review before submitting.`;
+      sendRuntimeMessage({
+        action: "CAREERSITE_AUTOPILOT_RESULT",
+        payload: {
+          task_id: result.autopilot.task_id,
+          url: window.location.href,
+          filled_count: filled,
+          total_fields: suggestions.length,
+          fillable_count: fillable.length,
+          manual_count: Number(result.manual_count || 0),
+          skipped_count: Number(result.sensitive_count || 0),
+          results: fillable.slice(0, 30).map((item) => ({
+            field_id: item.field_id,
+            label: item.label,
+            action: item.action,
+            source: item.source,
+          })),
+        },
+      });
+    }
   }
 
   function readTailoringPreferences(panel) {
@@ -378,6 +414,7 @@
         .filter(Boolean),
       custom_instructions: (panel.querySelector('[data-cs="tailor-instructions"]')?.value || "").trim(),
       include_connection_note: Boolean(panel.querySelector('[data-cs="tailor-note"]')?.checked),
+      include_cover_letter: Boolean(panel.querySelector('[data-cs="tailor-cover-letter"]')?.checked),
       bullet_counts: readBulletCounts(panel),
     };
   }
@@ -443,10 +480,12 @@
         const intensity = panel.querySelector('[data-cs="tailor-intensity"]');
         const instructions = panel.querySelector('[data-cs="tailor-instructions"]');
         const note = panel.querySelector('[data-cs="tailor-note"]');
+        const coverLetter = panel.querySelector('[data-cs="tailor-cover-letter"]');
         if (preset) preset.value = preferences.preset || "balanced";
         if (intensity) intensity.value = preferences.rewrite_intensity || "balanced";
         if (instructions) instructions.value = preferences.custom_instructions || "";
         if (note) note.checked = preferences.include_connection_note !== false;
+        if (coverLetter) coverLetter.checked = preferences.include_cover_letter === true;
         applyBulletCounts(panel, preferences.bullet_counts);
         const emphasis = new Set(preferences.emphasis || []);
         panel.querySelectorAll("[data-cs-emphasis]").forEach((input) => {
@@ -465,6 +504,7 @@
     const projects = Array.isArray(draft.projects) ? draft.projects : [];
     const publications = Array.isArray(draft.publications) ? draft.publications : [];
     const counts = normalizeBulletCounts(draft.preferences?.bullet_counts || requestPayload?.tailoring_preferences?.bullet_counts);
+    const coverLetterText = String(draft.cover_letter_text || "");
     const bulletRows = bullets.map((bullet) => `
       <div data-cs-bullet="${watcherEscape(bullet.bullet_id)}" style="margin-top:8px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:#1d1d1d;">
         <label style="display:flex;gap:6px;align-items:flex-start;color:#fff;font-size:11px;font-weight:700;">
@@ -522,6 +562,13 @@
         <label style="display:block;margin-top:8px;color:#b3b3b3;font-size:11px;">Recruiter note
           <textarea data-cs="connection-note" rows="3" maxlength="299" style="display:block;width:100%;margin-top:3px;padding:6px;resize:vertical;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;font:11px/1.4 Arial,sans-serif;box-sizing:border-box;">${watcherEscape(draft.connection_note || "")}</textarea>
         </label>
+        ${coverLetterText ? `
+        <label style="display:flex;gap:6px;align-items:center;margin-top:8px;color:#fff;font-size:11px;font-weight:700;">
+          <input data-cs="cover-letter-accepted" type="checkbox" checked>
+          Include cover letter in apply plan
+        </label>
+        <textarea data-cs="cover-letter-text" rows="8" maxlength="4000" style="display:block;width:100%;margin-top:5px;padding:6px;resize:vertical;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;font:11px/1.4 Arial,sans-serif;box-sizing:border-box;">${watcherEscape(coverLetterText)}</textarea>
+        ` : ""}
         </details>
         <button data-cs="finalize" style="margin-top:10px;width:100%;border:0;border-radius:6px;padding:8px;background:#e50914;color:#fff;font-weight:700;cursor:pointer;">Approve and generate DOCX + PDF</button>
         <button data-cs="regenerate" style="margin-top:6px;width:100%;border:1px solid #555;border-radius:6px;padding:7px;background:#242424;color:#fff;font-weight:700;cursor:pointer;">Regenerate draft (another Claude call)</button>
@@ -640,6 +687,8 @@
       publication_ids: selectedPublications,
       bullet_counts: readBulletCounts(container),
       connection_note: container.querySelector('[data-cs="connection-note"]')?.value || "",
+      cover_letter_accepted: Boolean(container.querySelector('[data-cs="cover-letter-accepted"]')?.checked),
+      cover_letter_text: container.querySelector('[data-cs="cover-letter-text"]')?.value || "",
       render_pdf: true,
     };
   }
@@ -731,6 +780,31 @@
         ${response.docx_download_path ? `<button data-cs-download="${watcherEscape(response.docx_download_path)}" style="border:1px solid #666;border-radius:6px;padding:7px;background:#303030;color:#fff;font-weight:700;cursor:pointer;">Download DOCX</button>` : ""}
         ${response.pdf_download_path ? `<button data-cs-download="${watcherEscape(response.pdf_download_path)}" style="border:1px solid #666;border-radius:6px;padding:7px;background:#303030;color:#fff;font-weight:700;cursor:pointer;">Download PDF</button>` : ""}
       </div>`;
+    if (response.prepared_apply_plan_path && response.apply_url) {
+      actions.insertAdjacentHTML("beforeend", `
+        <button data-cs="start-apply-assistant" style="margin-top:7px;width:100%;border:0;border-radius:6px;padding:8px;background:#e50914;color:#fff;font-weight:700;cursor:pointer;">Open application and fill safe fields</button>
+        <div data-cs="apply-assistant-status" style="margin-top:5px;color:#b3b3b3;font-size:11px;"></div>
+      `);
+      actions.querySelector('[data-cs="start-apply-assistant"]')?.addEventListener("click", async () => {
+        const status = actions.querySelector('[data-cs="apply-assistant-status"]');
+        if (status) status.textContent = "Arming apply assistant...";
+        const applyUrl = findApplyUrl() || response.apply_url;
+        const result = await sendRuntimeMessage({
+          action: "CAREERSITE_ARM_APPLY_ASSISTANT",
+          payload: {
+            url: applyUrl,
+            apply_plan_path: response.prepared_apply_plan_path,
+            overwrite: false,
+            open_browser: true,
+          },
+        });
+        if (status) {
+          status.textContent = result?.error
+            ? `Apply assistant failed: ${friendlyRuntimeError(result.error)}`
+            : "Application page opened. Safe fields will fill when Third Eye matches the page.";
+        }
+      });
+    }
     actions.querySelectorAll("[data-cs-download]").forEach((button) => {
       button.addEventListener("click", async () => {
         const result = await sendRuntimeMessage({
@@ -740,6 +814,24 @@
         if (result?.error) button.textContent = friendlyRuntimeError(result.error);
       });
     });
+  }
+
+  function findApplyUrl() {
+    const candidates = [...document.querySelectorAll("a[href]")]
+      .map((anchor) => ({
+        href: anchor.getAttribute("href") || "",
+        text: cleanText(anchor.innerText || anchor.getAttribute("aria-label") || anchor.title || ""),
+      }))
+      .filter((item) => /apply|start application|submit application/i.test(`${item.text} ${item.href}`));
+    for (const item of candidates) {
+      try {
+        const url = new URL(item.href, window.location.href);
+        if (/^https?:$/i.test(url.protocol)) return url.href;
+      } catch (_error) {
+        // Ignore malformed job-board links and fall back to the current job URL.
+      }
+    }
+    return "";
   }
 
   function applyWatcherSuggestions(suggestions, overwrite) {

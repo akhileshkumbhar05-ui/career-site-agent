@@ -99,7 +99,8 @@ Return a JSON object with exactly this structure:
   "skill_gaps": ["genuine gap 1", "genuine gap 2"],
   "tailored_score_estimate": 82,
   "score_rationale": "One sentence explaining why this score",
-  "connection_note": "LinkedIn connection request note under 299 chars mentioning the specific role"
+  "connection_note": "LinkedIn connection request note under 299 chars mentioning the specific role",
+  "cover_letter_text": "Optional concise cover letter only when requested, otherwise empty"
 }}
 
 Use the requested bullet count targets as section emphasis:
@@ -109,6 +110,10 @@ Use the requested bullet count targets as section emphasis:
 - For Experience and Projects, you may rewrite existing bullets or add additional bullets only when the master resume/Profile evidence clearly supports them.
 - Do not invent filler to satisfy a count. If evidence runs out, stop.
 Provide enough rewritten_bullets to support the requested counts where honest evidence exists.
+If cover letter generation is requested, write a concise, honest cover letter in first person
+that is grounded only in the master resume, profile evidence, and JD. Keep it under 260 words,
+avoid invented company facts, avoid overclaiming, and do not repeat the resume verbatim.
+If cover letter generation is not requested, return "cover_letter_text": "".
 Each rewritten bullet must use Google XYZ style with all three parts:
 - X: the outcome or accomplishment.
 - Y: the metric, artifact, validation result, dashboard, deployment, or research evidence, introduced with "as measured by" or "as evidenced by".
@@ -157,6 +162,7 @@ class ClaudeTailoringService:
         summary_key = result.get("summary_variant_key", "data_scientist")
         summary_text = result.get("summary_text", "")
         connection_note = result.get("connection_note", "") if payload.preferences.include_connection_note else ""
+        cover_letter_text = result.get("cover_letter_text", "") if payload.preferences.include_cover_letter else ""
         skill_gaps = [str(item) for item in result.get("skill_gaps", []) if item]
         score_value = self._safe_score(score, payload.current_score + 8)
 
@@ -179,6 +185,7 @@ class ClaudeTailoringService:
                 rewritten_bullets=[],
                 skill_gaps=skill_gaps,
                 connection_note="",
+                cover_letter_text="",
             )
 
         changes_summary = [
@@ -212,6 +219,7 @@ class ClaudeTailoringService:
             rewritten_bullets=bullets,
             skill_gaps=skill_gaps,
             connection_note=connection_note[:299] if connection_note else "",
+            cover_letter_text=self._clean_cover_letter(cover_letter_text) if cover_letter_text else "",
         )
 
     @staticmethod
@@ -310,6 +318,7 @@ class ClaudeTailoringService:
         )
         custom = preferences.custom_instructions.strip() or "None."
         connection_note = "Generate" if preferences.include_connection_note else "Do not generate"
+        cover_letter = "Generate" if preferences.include_cover_letter else "Do not generate"
         counts = preferences.bullet_counts
         return "\n".join(
             [
@@ -323,6 +332,7 @@ class ClaudeTailoringService:
                     f"{counts.research_per_paper} bullets under each selected research paper."
                 ),
                 f"Connection note: {connection_note}.",
+                f"Cover letter: {cover_letter}.",
                 f"Additional user direction: {custom}",
             ]
         )
@@ -337,8 +347,7 @@ class ClaudeTailoringService:
             adjusted["ranked_project_ids"] = []
 
         bullets = adjusted.get("rewritten_bullets")
-        if isinstance(bullets, list):
-            allowed_sections = set()
+        allowed_sections = set()
         if "projects" in emphasis:
             allowed_sections.add("project")
         if "experience" in emphasis:
@@ -348,13 +357,24 @@ class ClaudeTailoringService:
             allowed_sections.add("research")
         adjusted["rewritten_bullets"] = [
                 bullet
-                for bullet in bullets
+                for bullet in (bullets if isinstance(bullets, list) else [])
                 if isinstance(bullet, dict)
                 and str(bullet.get("section") or "").lower() in allowed_sections
             ]
         if not preferences.include_connection_note:
             adjusted["connection_note"] = ""
+        if not preferences.include_cover_letter:
+            adjusted["cover_letter_text"] = ""
         return adjusted
+
+    @staticmethod
+    def _clean_cover_letter(value: object) -> str:
+        text = re.sub(r"\s+\n", "\n", str(value or "")).strip()
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        words = text.split()
+        if len(words) > 280:
+            text = " ".join(words[:280]).rstrip(" ,;:") + "."
+        return text[:4000]
 
     @classmethod
     def _filter_weak_rewrites(cls, bullets: object) -> list[dict]:
