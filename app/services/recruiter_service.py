@@ -1,3 +1,5 @@
+from urllib.parse import quote_plus
+
 from app.schemas.contact import (
     OutreachDraftRequest,
     OutreachDraftResponse,
@@ -8,13 +10,26 @@ from app.schemas.contact import (
 
 
 class RecruiterService:
+    @staticmethod
+    def linkedin_search_url(company: str, title: str = "", location: str = "") -> str:
+        terms = " ".join(
+            value.strip()
+            for value in (company, "recruiter talent acquisition", title, location)
+            if value and value.strip()
+        )
+        return f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(terms)}"
+
     def find_recruiter(self, payload: RecruiterLookupRequest) -> RecruiterLookupResponse:
         contacts = [
             RecruiterContact(
                 name=f"{payload.company} Talent Acquisition",
                 role="Talent Acquisition",
                 source="company careers page",
-                profile_url=f"https://www.linkedin.com/search/results/people/?keywords={payload.company}%20recruiter",
+                profile_url=self.linkedin_search_url(
+                    payload.company,
+                    payload.title or "",
+                    payload.location or "",
+                ),
                 confidence=0.55,
             )
         ]

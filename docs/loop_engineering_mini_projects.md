@@ -334,6 +334,8 @@ Likely files:
 
 ### 8. Recruiter Outreach Batch
 
+Status: shipped.
+
 User payoff:
 - After 10 applications, generate recruiter search links and tailored connection notes in one batch.
 
@@ -347,11 +349,26 @@ Acceptance criteria:
 - Keep send action manual.
 - Track outreach done separately from application submitted.
 
+Implemented behavior:
+- Up to 10 manually submitted jobs are prepared in one batch and grouped by company in the API response.
+- Deterministic LinkedIn people-search URLs include company, role, recruiter, and talent-acquisition terms.
+- One Sonnet request drafts all uncached notes in the batch; unchanged jobs reuse their persisted note without another call.
+- Each note is grounded in the master-resume evidence and job context, capped at 300 characters, and editable before use.
+- If Claude is unavailable or returns an invalid batch, the UI labels the persisted note as a deterministic fallback.
+- LinkedIn search, copying, recruiter-name personalization, and final sending remain manual.
+- `submitted_confirmed` or `sheet_logged` advances to `recruiter_note_ready` when a note is prepared.
+- Only an explicit human send confirmation advances `recruiter_note_ready` to `outreach_done`.
+
+Endpoints:
+- `POST /application-loop/recruiter-outreach/batches`
+- `PUT /application-loop/items/{loop_id}/recruiter-outreach`
+- `POST /application-loop/items/{loop_id}/recruiter-outreach/sent`
+
 Likely files:
 - `app/services/recruiter_service.py`
-- `app/services/recruiter_outreach_agent.py`
+- `app/services/recruiter_outreach_batch_service.py`
 - `frontend/src/main.jsx`
-- `tests/test_career_agents.py`
+- `tests/test_application_recruiter_outreach_loop.py`
 
 ### 9. Loop Metrics Dashboard
 

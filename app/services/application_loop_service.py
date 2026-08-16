@@ -34,6 +34,15 @@ from app.schemas.application_loop import (
     ApplicationLoopFitOverrideRequest,
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
+    ApplicationLoopOutreachBatchOutcome,
+    ApplicationLoopOutreachBatchRequest,
+    ApplicationLoopOutreachBatchResponse,
+    ApplicationLoopOutreachBatchSummary,
+    ApplicationLoopOutreachCompanyGroup,
+    ApplicationLoopOutreachResponse,
+    ApplicationLoopOutreachSentRequest,
+    ApplicationLoopOutreachUpdateRequest,
+    ApplicationLoopRecruiterOutreach,
     ApplicationLoopState,
     ApplicationLoopTailoringApproval,
     ApplicationLoopTailoringApproveRequest,
@@ -53,10 +62,12 @@ from app.schemas.tailoring_review import (
     TailoringReviewSelection,
 )
 from app.services.tracker_service import TrackerService
+from app.services.recruiter_service import RecruiterService
 
 if TYPE_CHECKING:
     from app.services.autofill_autopilot_service import AutofillAutopilotService
     from app.services.llm_match_service import LLMMatchService
+    from app.services.recruiter_outreach_batch_service import RecruiterOutreachBatchService
     from app.services.tailoring_review_service import TailoringReviewService
 
 
@@ -87,11 +98,13 @@ class ApplicationLoopService:
         matcher: LLMMatchService | None = None,
         tailoring_review: TailoringReviewService | None = None,
         autofill_autopilot: AutofillAutopilotService | None = None,
+        recruiter_outreach: RecruiterOutreachBatchService | None = None,
     ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.matcher = matcher
         self.tailoring_review = tailoring_review
         self.autofill_autopilot = autofill_autopilot
+        self.recruiter_outreach = recruiter_outreach
         init_db()
 
     def create(self, payload: ApplicationLoopCreateRequest) -> ApplicationLoopItem:
@@ -935,6 +948,222 @@ class ApplicationLoopService:
             sheet_row_proposal=sheet_row,
             message=message,
         )
+
+    def prepare_recruiter_outreach_batch(
+        self,
+        payload: ApplicationLoopOutreachBatchRequest,
+    ) -> ApplicationLoopOutreachBatchResponse:
+        if self.recruiter_outreach is None:
+            raise RuntimeError("Recruiter outreach batch service is not configured.")
+
+        generated_at = self._now()
+        loop_ids = list(dict.fromkeys(loop_id.strip() for loop_id in payload.loop_ids if loop_id.strip()))
+        outcomes: list[ApplicationLoopOutreachBatchOutcome] = []
+        pending: list[tuple[ApplicationLoopItem, dict[str, Any], str]] = []
+
+        for loop_id in loop_ids:
+            try:
+                item = self.get_item(loop_id)
+                if item.state not in {"submitted_confirmed", "sheet_logged", "recruiter_note_ready"}:
+                    raise InvalidApplicationLoopTransition(
+                        "Recruiter outreach can be prepared only after manual application submission."
+                    )
+                job = self._outreach_job(item)
+                cache_key = self.recruiter_outreach.cache_key(job)
+                if (
+                    not payload.force_refresh
+                    and item.recruiter_outreach is not None
+                    and item.recruiter_outreach.cache_key == cache_key
+                ):
+                    outcomes.append(
+                        ApplicationLoopOutreachBatchOutcome(
+                            loop_id=loop_id,
+                            company=item.company,
+                            role=item.role,
+                            status="cached",
+                            outreach=item.recruiter_outreach,
+                            loop_item=item,
+                        )
+                    )
+                    continue
+                pending.append((item, job, cache_key))
+            except (KeyError, InvalidApplicationLoopTransition, ValueError) as exc:
+                outcomes.append(
+                    ApplicationLoopOutreachBatchOutcome(
+                        loop_id=loop_id,
+                        status="error",
+                        error=str(exc),
+                    )
+                )
+
+        batch_result = self.recruiter_outreach.draft_batch(
+            [job for _, job, _ in pending],
+            use_llm=payload.use_llm,
+        )
+        notes = batch_result.get("notes") or {}
+        for item, job, cache_key in pending:
+            try:
+                note = str(notes.get(item.loop_id) or "").strip()
+                if not note:
+                    raise ValueError("No grounded recruiter connection note was generated.")
+                if len(note) > 300:
+                    raise ValueError("The generated recruiter connection note exceeds 300 characters.")
+
+                version = (item.recruiter_outreach.version if item.recruiter_outreach else 0) + 1
+                outreach = ApplicationLoopRecruiterOutreach(
+                    version=version,
+                    linkedin_search_url=RecruiterService.linkedin_search_url(item.company, item.role),
+                    connection_note=note,
+                    engine=str(batch_result.get("engine") or "deterministic_fallback"),
+                    model=str(batch_result.get("model") or ""),
+                    cache_key=cache_key,
+                    llm_usage=dict(batch_result.get("llm_usage") or {}),
+                    claude_call_consumed=bool(batch_result.get("claude_call_consumed")),
+                    generated_at=generated_at,
+                )
+                if item.state in {"submitted_confirmed", "sheet_logged"}:
+                    updated = self.transition(
+                        item,
+                        ApplicationLoopTransitionRequest(
+                            target_state="recruiter_note_ready",
+                            actor="agent",
+                            note=f"Recruiter outreach note v{version} prepared for manual review and sending.",
+                        ),
+                    )
+                else:
+                    updated = item.model_copy(deep=True)
+                    updated.updated_at = generated_at
+                    updated.history.append(
+                        ApplicationLoopEvent(
+                            from_state=item.state,
+                            to_state=item.state,
+                            actor="agent",
+                            note=f"Recruiter outreach note v{version} regenerated for manual review.",
+                            occurred_at=generated_at,
+                        )
+                    )
+                updated.recruiter_outreach = outreach
+                self._save_item(updated)
+                outcomes.append(
+                    ApplicationLoopOutreachBatchOutcome(
+                        loop_id=item.loop_id,
+                        company=item.company,
+                        role=item.role,
+                        status="ready",
+                        outreach=outreach,
+                        loop_item=updated,
+                    )
+                )
+            except (KeyError, InvalidApplicationLoopTransition, ValueError) as exc:
+                outcomes.append(
+                    ApplicationLoopOutreachBatchOutcome(
+                        loop_id=item.loop_id,
+                        company=item.company,
+                        role=item.role,
+                        status="error",
+                        error=str(exc),
+                    )
+                )
+
+        position = {loop_id: index for index, loop_id in enumerate(loop_ids)}
+        outcomes.sort(key=lambda outcome: position.get(outcome.loop_id, len(position)))
+        grouped: dict[str, list[ApplicationLoopOutreachBatchOutcome]] = {}
+        for outcome in outcomes:
+            company = outcome.company or "Unavailable"
+            grouped.setdefault(company, []).append(outcome)
+        groups = [
+            ApplicationLoopOutreachCompanyGroup(company=company, outcomes=company_outcomes)
+            for company, company_outcomes in grouped.items()
+        ]
+        llm_calls = int(bool(pending and batch_result.get("claude_call_consumed")))
+        return ApplicationLoopOutreachBatchResponse(
+            generated_at=generated_at,
+            summary=ApplicationLoopOutreachBatchSummary(
+                requested=len(outcomes),
+                companies=len(grouped),
+                ready=sum(outcome.status == "ready" for outcome in outcomes),
+                cached=sum(outcome.status == "cached" for outcome in outcomes),
+                llm_calls=llm_calls,
+                failed=sum(outcome.status == "error" for outcome in outcomes),
+            ),
+            groups=groups,
+            outcomes=outcomes,
+        )
+
+    def update_recruiter_outreach(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopOutreachUpdateRequest,
+    ) -> ApplicationLoopOutreachResponse:
+        item = self.get_item(loop_id)
+        if item.state != "recruiter_note_ready" or item.recruiter_outreach is None:
+            raise InvalidApplicationLoopTransition(
+                "Prepare a recruiter note before editing outreach details."
+            )
+        edited_at = self._now()
+        updated = item.model_copy(deep=True)
+        updated.recruiter_outreach.recruiter_name = payload.recruiter_name.strip()
+        updated.recruiter_outreach.connection_note = " ".join(payload.connection_note.split())
+        updated.recruiter_outreach.edited_at = edited_at
+        updated.updated_at = edited_at
+        updated.history.append(
+            ApplicationLoopEvent(
+                from_state=item.state,
+                to_state=item.state,
+                actor="human",
+                note="Recruiter name or connection note edited before sending.",
+                occurred_at=edited_at,
+            )
+        )
+        self._save_item(updated)
+        return ApplicationLoopOutreachResponse(
+            loop_item=updated,
+            outreach=updated.recruiter_outreach,
+            message="Recruiter outreach note saved for manual sending.",
+        )
+
+    def mark_recruiter_outreach_sent(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopOutreachSentRequest,
+    ) -> ApplicationLoopOutreachResponse:
+        item = self.get_item(loop_id)
+        if item.state != "recruiter_note_ready" or item.recruiter_outreach is None:
+            raise InvalidApplicationLoopTransition(
+                "A reviewed recruiter note must be ready before outreach can be marked sent."
+            )
+        if not payload.human_confirmed_sent:
+            raise InvalidApplicationLoopTransition(
+                "Explicit human confirmation is required before marking recruiter outreach sent."
+            )
+        updated = self.transition(
+            item,
+            ApplicationLoopTransitionRequest(
+                target_state="outreach_done",
+                actor="human",
+                note=payload.note,
+            ),
+        )
+        updated.recruiter_outreach.status = "sent"
+        updated.recruiter_outreach.sent_at = updated.updated_at
+        updated.recruiter_outreach.sent_note = payload.note.strip()
+        self._save_item(updated)
+        return ApplicationLoopOutreachResponse(
+            loop_item=updated,
+            outreach=updated.recruiter_outreach,
+            message="Manual recruiter outreach recorded separately from the application submission.",
+        )
+
+    @staticmethod
+    def _outreach_job(item: ApplicationLoopItem) -> dict[str, Any]:
+        strengths = item.fit_gate.strengths if item.fit_gate else []
+        return {
+            "loop_id": item.loop_id,
+            "company": item.company,
+            "role": item.role,
+            "jd_text": item.jd_text,
+            "fit_strengths": strengths,
+        }
 
     @staticmethod
     def _validate_current_draft(item: ApplicationLoopItem, draft_id: str) -> None:

@@ -14,6 +14,11 @@ from app.schemas.application_loop import (
     ApplicationLoopFitOverrideRequest,
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
+    ApplicationLoopOutreachBatchRequest,
+    ApplicationLoopOutreachBatchResponse,
+    ApplicationLoopOutreachResponse,
+    ApplicationLoopOutreachSentRequest,
+    ApplicationLoopOutreachUpdateRequest,
     ApplicationLoopTailoringApproveRequest,
     ApplicationLoopTailoringApproveResponse,
     ApplicationLoopTailoringDraftRequest,
@@ -264,6 +269,54 @@ def record_ats_outcome(
 ) -> ApplicationLoopATSOutcomeResponse:
     try:
         return service.record_ats_outcome(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/recruiter-outreach/batches",
+    response_model=ApplicationLoopOutreachBatchResponse,
+)
+def prepare_recruiter_outreach_batch(
+    payload: ApplicationLoopOutreachBatchRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopOutreachBatchResponse:
+    try:
+        return service.prepare_recruiter_outreach_batch(payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.put(
+    "/items/{loop_id}/recruiter-outreach",
+    response_model=ApplicationLoopOutreachResponse,
+)
+def update_recruiter_outreach(
+    loop_id: str,
+    payload: ApplicationLoopOutreachUpdateRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopOutreachResponse:
+    try:
+        return service.update_recruiter_outreach(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/recruiter-outreach/sent",
+    response_model=ApplicationLoopOutreachResponse,
+)
+def mark_recruiter_outreach_sent(
+    loop_id: str,
+    payload: ApplicationLoopOutreachSentRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopOutreachResponse:
+    try:
+        return service.mark_recruiter_outreach_sent(loop_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidApplicationLoopTransition as exc:

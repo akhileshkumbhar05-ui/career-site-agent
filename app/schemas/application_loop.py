@@ -32,6 +32,7 @@ ATSAssistStatus = Literal[
     "technical_issue",
     "submitted_confirmed",
 ]
+RecruiterOutreachStatus = Literal["ready", "sent"]
 
 
 class ApplicationLoopCreateRequest(BaseModel):
@@ -159,6 +160,23 @@ class ApplicationLoopATSAssist(BaseModel):
     sheets_status_proposal: str = ""
 
 
+class ApplicationLoopRecruiterOutreach(BaseModel):
+    version: int = Field(ge=1)
+    status: RecruiterOutreachStatus = "ready"
+    recruiter_name: str = Field(default="", max_length=200)
+    linkedin_search_url: str
+    connection_note: str = Field(min_length=1, max_length=300)
+    engine: str = "deterministic_fallback"
+    model: str = ""
+    cache_key: str = ""
+    llm_usage: dict = Field(default_factory=dict)
+    claude_call_consumed: bool = False
+    generated_at: str
+    edited_at: str = ""
+    sent_at: str = ""
+    sent_note: str = ""
+
+
 class ApplicationLoopItem(BaseModel):
     loop_id: str
     company: str
@@ -177,6 +195,7 @@ class ApplicationLoopItem(BaseModel):
     tailoring_approval: ApplicationLoopTailoringApproval | None = None
     export_handoff: ApplicationLoopExportHandoff | None = None
     ats_assist: ApplicationLoopATSAssist | None = None
+    recruiter_outreach: ApplicationLoopRecruiterOutreach | None = None
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
@@ -315,4 +334,60 @@ class ApplicationLoopATSOutcomeResponse(BaseModel):
     loop_item: ApplicationLoopItem
     assist: ApplicationLoopATSAssist
     sheet_row_proposal: dict[str, str]
+    message: str
+
+
+class ApplicationLoopOutreachBatchRequest(BaseModel):
+    loop_ids: list[str] = Field(min_length=1, max_length=10)
+    use_llm: bool = True
+    force_refresh: bool = False
+
+
+OutreachBatchOutcomeStatus = Literal["ready", "cached", "error"]
+
+
+class ApplicationLoopOutreachBatchOutcome(BaseModel):
+    loop_id: str
+    company: str = ""
+    role: str = ""
+    status: OutreachBatchOutcomeStatus
+    outreach: ApplicationLoopRecruiterOutreach | None = None
+    loop_item: ApplicationLoopItem | None = None
+    error: str = ""
+
+
+class ApplicationLoopOutreachCompanyGroup(BaseModel):
+    company: str
+    outcomes: list[ApplicationLoopOutreachBatchOutcome]
+
+
+class ApplicationLoopOutreachBatchSummary(BaseModel):
+    requested: int = Field(ge=0)
+    companies: int = Field(ge=0)
+    ready: int = Field(ge=0)
+    cached: int = Field(ge=0)
+    llm_calls: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
+class ApplicationLoopOutreachBatchResponse(BaseModel):
+    generated_at: str
+    summary: ApplicationLoopOutreachBatchSummary
+    groups: list[ApplicationLoopOutreachCompanyGroup]
+    outcomes: list[ApplicationLoopOutreachBatchOutcome]
+
+
+class ApplicationLoopOutreachUpdateRequest(BaseModel):
+    recruiter_name: str = Field(default="", max_length=200)
+    connection_note: str = Field(min_length=20, max_length=300)
+
+
+class ApplicationLoopOutreachSentRequest(BaseModel):
+    note: str = Field(min_length=3, max_length=1000)
+    human_confirmed_sent: bool = False
+
+
+class ApplicationLoopOutreachResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    outreach: ApplicationLoopRecruiterOutreach
     message: str

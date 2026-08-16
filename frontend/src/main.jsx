@@ -9,6 +9,7 @@ import {
   ChevronUp,
   CircleHelp,
   Clock3,
+  Copy,
   Download,
   ExternalLink,
   Eye,
@@ -24,11 +25,13 @@ import {
   RotateCcw,
   Save,
   Search,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
+  Users,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -455,6 +458,11 @@ function BatchInboxWorkspace() {
   const [atsPanelId, setAtsPanelId] = React.useState("");
   const [atsNotes, setAtsNotes] = React.useState({});
   const [submissionConfirmations, setSubmissionConfirmations] = React.useState({});
+  const [outreachPanelId, setOutreachPanelId] = React.useState("");
+  const [outreachDrafts, setOutreachDrafts] = React.useState({});
+  const [outreachConfirmations, setOutreachConfirmations] = React.useState({});
+  const [outreachOutcomeNotes, setOutreachOutcomeNotes] = React.useState({});
+  const [outreachResult, setOutreachResult] = React.useState(null);
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
@@ -848,9 +856,145 @@ function BatchInboxWorkspace() {
     }
   }
 
+  function outreachDraftFor(item) {
+    return outreachDrafts[item.loop_id] || {
+      recruiter_name: item.recruiter_outreach?.recruiter_name || "",
+      connection_note: item.recruiter_outreach?.connection_note || ""
+    };
+  }
+
+  function setOutreachDraft(loopId, field, value) {
+    setOutreachDrafts((current) => ({
+      ...current,
+      [loopId]: { ...(current[loopId] || {}), [field]: value }
+    }));
+  }
+
+  async function prepareRecruiterOutreach(loopIds, forceRefresh = false) {
+    if (!loopIds.length) return;
+    const busyKey = loopIds.length === 1 && forceRefresh ? `outreach-regenerate:${loopIds[0]}` : "outreach-batch";
+    setBusy(busyKey);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost("/application-loop/recruiter-outreach/batches", {
+        loop_ids: loopIds,
+        use_llm: useClaude,
+        force_refresh: forceRefresh
+      });
+      setOutreachResult(result);
+      result.outcomes.forEach((outcome) => {
+        replaceLoopItem(outcome.loop_item);
+        if (outcome.outreach) {
+          setOutreachDrafts((current) => ({
+            ...current,
+            [outcome.loop_id]: {
+              recruiter_name: outcome.outreach.recruiter_name || "",
+              connection_note: outcome.outreach.connection_note || ""
+            }
+          }));
+        }
+      });
+      setMessage(
+        `${result.summary.ready} note${result.summary.ready === 1 ? "" : "s"} prepared, ` +
+        `${result.summary.cached} cached, ${result.summary.llm_calls} Claude call${result.summary.llm_calls === 1 ? "" : "s"}.`
+      );
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not prepare recruiter outreach.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function toggleOutreachPanel(item) {
+    if (outreachPanelId === item.loop_id) {
+      setOutreachPanelId("");
+      return;
+    }
+    setOutreachPanelId(item.loop_id);
+    setOutreachDrafts((current) => ({
+      ...current,
+      [item.loop_id]: {
+        recruiter_name: item.recruiter_outreach?.recruiter_name || "",
+        connection_note: item.recruiter_outreach?.connection_note || ""
+      }
+    }));
+  }
+
+  async function saveRecruiterOutreach(item) {
+    const draft = outreachDraftFor(item);
+    const note = String(draft.connection_note || "").trim();
+    if (note.length < 20 || note.length > 300) {
+      setError("The connection note must be between 20 and 300 characters.");
+      return;
+    }
+    setBusy(`outreach-save:${item.loop_id}`);
+    setError("");
+    try {
+      const result = await apiPut(`/application-loop/items/${item.loop_id}/recruiter-outreach`, {
+        recruiter_name: String(draft.recruiter_name || "").trim(),
+        connection_note: note
+      });
+      replaceLoopItem(result.loop_item);
+      setOutreachDrafts((current) => ({
+        ...current,
+        [item.loop_id]: {
+          recruiter_name: result.outreach.recruiter_name || "",
+          connection_note: result.outreach.connection_note
+        }
+      }));
+      setMessage(result.message);
+    } catch (err) {
+      setError(err.message || "Could not save the recruiter note.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function copyRecruiterNote(item) {
+    const note = String(outreachDraftFor(item).connection_note || "").trim();
+    if (!note) return;
+    try {
+      await navigator.clipboard.writeText(note);
+      setMessage("Connection note copied.");
+      setError("");
+    } catch {
+      setError("The browser could not copy the note. Select the text and copy it manually.");
+    }
+  }
+
+  async function markRecruiterOutreachSent(item) {
+    const note = String(outreachOutcomeNotes[item.loop_id] || "").trim();
+    if (note.length < 3 || !outreachConfirmations[item.loop_id]) {
+      setError("Confirm the manual LinkedIn send and add a short outcome note.");
+      return;
+    }
+    setBusy(`outreach-sent:${item.loop_id}`);
+    setError("");
+    try {
+      const result = await apiPost(`/application-loop/items/${item.loop_id}/recruiter-outreach/sent`, {
+        note,
+        human_confirmed_sent: true
+      });
+      replaceLoopItem(result.loop_item);
+      setMessage(result.message);
+    } catch (err) {
+      setError(err.message || "Could not record recruiter outreach.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
   const readyCount = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim()).length;
   const pendingFitIds = inbox.filter((item) => item.state === "imported").map((item) => item.loop_id);
+  const pendingOutreachIds = inbox
+    .filter((item) => ["submitted_confirmed", "sheet_logged"].includes(item.state))
+    .map((item) => item.loop_id);
+  const outreachBatchIds = pendingOutreachIds.slice(0, 10);
+  const outreachReadyCount = inbox.filter((item) => item.state === "recruiter_note_ready").length;
+  const outreachDoneCount = inbox.filter((item) => item.state === "outreach_done").length;
 
   return (
     <>
@@ -987,6 +1131,21 @@ function BatchInboxWorkspace() {
           </button>
         </div>
 
+        <div className="recruiter-outreach-toolbar">
+          <div className="fit-gate-heading">
+            <Users size={20} />
+            <div>
+              <h3>Recruiter outreach</h3>
+              <span>{pendingOutreachIds.length} pending / {outreachReadyCount} ready / {outreachDoneCount} sent</span>
+            </div>
+          </div>
+          <Toggle label="Use Claude" checked={useClaude} onChange={setUseClaude} />
+          <button className="icon-button primary" onClick={() => prepareRecruiterOutreach(outreachBatchIds)} disabled={!outreachBatchIds.length || Boolean(busy)}>
+            {busy === "outreach-batch" ? <Loader2 className="spin" size={17} /> : <Users size={17} />}
+            <span>Prepare {outreachBatchIds.length || ""} note{outreachBatchIds.length === 1 ? "" : "s"}</span>
+          </button>
+        </div>
+
         {batchResult && (
           <div className="batch-summary" aria-label="Latest import summary">
             <BatchStat label="Requested" value={batchResult.summary.requested} />
@@ -1007,6 +1166,15 @@ function BatchInboxWorkspace() {
           </div>
         )}
 
+        {outreachResult && (
+          <div className="outreach-summary" aria-label="Latest recruiter outreach batch summary">
+            <BatchStat label="Companies" value={outreachResult.summary.companies} />
+            <BatchStat label="Ready" value={outreachResult.summary.ready} tone="good" />
+            <BatchStat label="Cached" value={outreachResult.summary.cached} />
+            <BatchStat label="Claude calls" value={outreachResult.summary.llm_calls} />
+          </div>
+        )}
+
         <div className="batch-inbox-list">
           {inbox.length ? inbox.map((item) => {
             const fit = item.fit_gate;
@@ -1016,6 +1184,8 @@ function BatchInboxWorkspace() {
             const reviewOpen = reviewItemId === item.loop_id;
             const tailoringOpen = tailoringItemId === item.loop_id;
             const atsPanelOpen = atsPanelId === item.loop_id;
+            const outreachPanelOpen = outreachPanelId === item.loop_id;
+            const outreachDraft = outreachDraftFor(item);
             const hasTailoringDraft = Boolean(item.tailoring_draft);
             const canStartTailoring = item.state === "fit_checked" && fit?.decision === "apply";
             const canArmAts = Boolean(item.export_handoff) && ["approved_for_apply", "ats_opened"].includes(item.state);
@@ -1046,6 +1216,7 @@ function BatchInboxWorkspace() {
                   {item.revision_count > 0 && <span>{item.revision_count} revision{item.revision_count === 1 ? "" : "s"}</span>}
                   {item.export_handoff && <span>Export v{item.export_handoff.version}</span>}
                   {item.ats_assist && <span>ATS assist v{item.ats_assist.version}</span>}
+                  {item.recruiter_outreach && <span>Outreach v{item.recruiter_outreach.version}</span>}
                 </div>
                 {item.job_url && (
                   <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
@@ -1144,6 +1315,18 @@ function BatchInboxWorkspace() {
                     <button className="icon-button secondary" onClick={() => toggleAtsPanel(item)} disabled={Boolean(busy)}>
                       {busy === `ats-sync:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />}
                       <span>{atsPanelOpen ? "Close ATS status" : "ATS status"}</span>
+                    </button>
+                  )}
+                  {item.recruiter_outreach && (
+                    <a className="icon-button secondary" href={item.recruiter_outreach.linkedin_search_url} target="_blank" rel="noreferrer">
+                      <Search size={16} />
+                      <span>Find recruiters</span>
+                    </a>
+                  )}
+                  {item.recruiter_outreach && (
+                    <button className="icon-button secondary" onClick={() => toggleOutreachPanel(item)} disabled={Boolean(busy)}>
+                      <Users size={16} />
+                      <span>{outreachPanelOpen ? "Close outreach" : "Outreach note"}</span>
                     </button>
                   )}
                   {item.state === "fit_checked" && hasCompleteFit && (
@@ -1284,6 +1467,98 @@ function BatchInboxWorkspace() {
                           <span>Confirm manual submission</span>
                         </button>
                       </div>
+                    )}
+                  </section>
+                )}
+
+                {outreachPanelOpen && item.recruiter_outreach && (
+                  <section className="recruiter-outreach-panel" aria-label="Recruiter outreach review">
+                    <header className="recruiter-outreach-header">
+                      <div>
+                        <Users size={18} />
+                        <div>
+                          <h4>Connection request</h4>
+                          <span>
+                            {item.recruiter_outreach.engine === "claude"
+                              ? item.recruiter_outreach.model || "Claude"
+                              : "Deterministic fallback"}
+                          </span>
+                        </div>
+                      </div>
+                      <span className={`tag ${item.recruiter_outreach.status === "sent" ? "good" : "blue"}`}>
+                        {item.recruiter_outreach.status}
+                      </span>
+                    </header>
+
+                    <label>
+                      <span>Recruiter name</span>
+                      <input
+                        value={outreachDraft.recruiter_name || ""}
+                        onChange={(event) => setOutreachDraft(item.loop_id, "recruiter_name", event.target.value)}
+                        placeholder="Optional after LinkedIn search"
+                        disabled={item.state === "outreach_done"}
+                        maxLength={200}
+                      />
+                    </label>
+                    <label>
+                      <span>Connection note</span>
+                      <textarea
+                        value={outreachDraft.connection_note || ""}
+                        onChange={(event) => setOutreachDraft(item.loop_id, "connection_note", event.target.value)}
+                        disabled={item.state === "outreach_done"}
+                        maxLength={300}
+                      />
+                      <small>{String(outreachDraft.connection_note || "").length} / 300</small>
+                    </label>
+
+                    <div className="recruiter-outreach-actions">
+                      <button className="icon-button secondary" onClick={() => copyRecruiterNote(item)} disabled={!String(outreachDraft.connection_note || "").trim()}>
+                        <Copy size={16} />
+                        <span>Copy</span>
+                      </button>
+                      {item.state === "recruiter_note_ready" && (
+                        <button className="icon-button secondary" onClick={() => saveRecruiterOutreach(item)} disabled={String(outreachDraft.connection_note || "").trim().length < 20 || Boolean(busy)}>
+                          {busy === `outreach-save:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+                          <span>Save note</span>
+                        </button>
+                      )}
+                      {item.state === "recruiter_note_ready" && (
+                        <button className="icon-button ghost compact-icon" title="Regenerate this note; may use one Claude call" onClick={() => prepareRecruiterOutreach([item.loop_id], true)} disabled={Boolean(busy)}>
+                          {busy === `outreach-regenerate:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <RotateCcw size={16} />}
+                        </button>
+                      )}
+                    </div>
+
+                    {item.state === "recruiter_note_ready" && (
+                      <div className="recruiter-send-confirmation">
+                        <label>
+                          <span>Outcome note</span>
+                          <textarea
+                            value={outreachOutcomeNotes[item.loop_id] || ""}
+                            onChange={(event) => setOutreachOutcomeNotes((current) => ({ ...current, [item.loop_id]: event.target.value }))}
+                            placeholder="Connection request sent to recruiter name"
+                            maxLength={1000}
+                          />
+                        </label>
+                        <label className="ats-submit-confirmation">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(outreachConfirmations[item.loop_id])}
+                            onChange={(event) => setOutreachConfirmations((current) => ({ ...current, [item.loop_id]: event.target.checked }))}
+                          />
+                          <span>I manually sent this connection request on LinkedIn.</span>
+                        </label>
+                        <button className="icon-button primary" onClick={() => markRecruiterOutreachSent(item)} disabled={!outreachConfirmations[item.loop_id] || String(outreachOutcomeNotes[item.loop_id] || "").trim().length < 3 || Boolean(busy)}>
+                          {busy === `outreach-sent:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <Send size={16} />}
+                          <span>Mark sent</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {item.state === "outreach_done" && (
+                      <p className="recruiter-sent-note">
+                        Sent {formatDateTime(item.recruiter_outreach.sent_at)}. {item.recruiter_outreach.sent_note}
+                      </p>
                     )}
                   </section>
                 )}

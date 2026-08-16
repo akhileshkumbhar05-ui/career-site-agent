@@ -946,6 +946,31 @@ input[type="range"]::-moz-range-thumb {
   padding: 0.8rem 0;
 }
 
+.recruiter-outreach-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 0.8rem 0;
+}
+
+.recruiter-outreach-toolbar .fit-gate-heading svg {
+  color: var(--blue);
+}
+
+.recruiter-outreach-toolbar > .icon-button {
+  min-width: 150px;
+}
+
+.outreach-summary {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0.8rem 0;
+}
+
 .fit-gate-toolbar > .icon-button {
   grid-column: 1 / -1;
   width: 100%;
@@ -1349,6 +1374,123 @@ input[type="range"]::-moz-range-thumb {
 .ats-submit-button {
   justify-content: center;
   width: 100%;
+}
+
+.recruiter-outreach-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.8rem;
+}
+
+.recruiter-outreach-header,
+.recruiter-outreach-header > div,
+.recruiter-outreach-actions {
+  align-items: center;
+  display: flex;
+}
+
+.recruiter-outreach-header {
+  justify-content: space-between;
+}
+
+.recruiter-outreach-header > div {
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.recruiter-outreach-header svg {
+  color: var(--blue);
+  flex: 0 0 auto;
+}
+
+.recruiter-outreach-header h4 {
+  font-size: 0.84rem;
+}
+
+.recruiter-outreach-header span:not(.tag) {
+  color: var(--muted);
+  display: block;
+  font-size: 0.7rem;
+  margin-top: 0.12rem;
+}
+
+.recruiter-outreach-panel > label,
+.recruiter-send-confirmation > label:first-child {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.recruiter-outreach-panel > label > span,
+.recruiter-send-confirmation > label:first-child > span {
+  color: var(--muted-2);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.recruiter-outreach-panel input[type="text"],
+.recruiter-outreach-panel > label > input,
+.recruiter-outreach-panel textarea {
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  line-height: 1.45;
+  outline: 0;
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.recruiter-outreach-panel > label > input {
+  min-height: 40px;
+}
+
+.recruiter-outreach-panel textarea {
+  min-height: 92px;
+}
+
+.recruiter-outreach-panel input:focus,
+.recruiter-outreach-panel textarea:focus {
+  border-color: var(--line-strong);
+}
+
+.recruiter-outreach-panel input:disabled,
+.recruiter-outreach-panel textarea:disabled {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.recruiter-outreach-panel label > small {
+  color: var(--muted-2);
+  font-size: 0.64rem;
+  text-align: right;
+}
+
+.recruiter-outreach-actions {
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.recruiter-send-confirmation {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.7rem;
+}
+
+.recruiter-send-confirmation > .icon-button {
+  justify-content: center;
+  width: 100%;
+}
+
+.recruiter-sent-note {
+  border-left: 2px solid var(--green);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  padding: 0.45rem 0.55rem;
 }
 
 .fit-decision-control {
@@ -2412,6 +2554,18 @@ th {
   }
 
   .batch-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recruiter-outreach-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .recruiter-outreach-toolbar > .icon-button {
+    width: 100%;
+  }
+
+  .outreach-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

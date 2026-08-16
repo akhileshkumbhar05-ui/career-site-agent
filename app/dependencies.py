@@ -26,6 +26,7 @@ from app.services.llm_match_service import LLMMatchService
 from app.services.copilot_service import ManualJDCopilotService
 from app.services.page_watcher_service import PageWatcherService
 from app.services.recruiter_service import RecruiterService
+from app.services.recruiter_outreach_batch_service import RecruiterOutreachBatchService
 from app.services.scoring_service import ScoringService
 from app.services.tailoring_service import TailoringService
 from app.services.tailoring_review_service import TailoringReviewService
@@ -84,6 +85,15 @@ def get_application_loop_service() -> ApplicationLoopService:
         matcher=get_llm_match_service(),
         tailoring_review=get_tailoring_review_service(),
         autofill_autopilot=get_autofill_autopilot_service(),
+        recruiter_outreach=get_recruiter_outreach_batch_service(),
+    )
+
+
+@lru_cache
+def get_recruiter_outreach_batch_service() -> RecruiterOutreachBatchService:
+    return RecruiterOutreachBatchService(
+        api_key=settings.anthropic_api_key,
+        model=settings.anthropic_model,
     )
 
 
