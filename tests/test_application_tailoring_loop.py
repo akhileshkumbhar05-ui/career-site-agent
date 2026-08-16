@@ -214,6 +214,32 @@ def _review_payload(draft_id: str, *, note: str = "The full resume is grounded a
     )
 
 
+def _approved_memory_source(service, loop_id: str):
+    service.create_tailoring_draft(loop_id, ApplicationLoopTailoringDraftRequest())
+    revised = service.create_tailoring_draft(
+        loop_id,
+        ApplicationLoopTailoringDraftRequest(
+            revision_reason="Expand both research papers with five honest data-analysis bullets.",
+            preferences=TailoringPreferences(
+                preset="technical_depth",
+                rewrite_intensity="strong",
+                emphasis=["summary", "experience", "skills", "research_papers"],
+                custom_instructions="Prioritize the quantitative analyses in both publications.",
+                bullet_counts={
+                    "experience_per_role": 4,
+                    "projects_per_project": 0,
+                    "research_per_paper": 5,
+                },
+            ),
+        ),
+    )
+    service.approve_tailoring_draft(
+        loop_id,
+        _review_payload(revised.draft.draft_id),
+    )
+    return revised
+
+
 def test_tailoring_loop_persists_draft_revision_and_approval(tmp_path, monkeypatch) -> None:
     service, tailoring, loop_id = _service(tmp_path, monkeypatch)
 
@@ -270,6 +296,85 @@ def test_tailoring_loop_persists_draft_revision_and_approval(tmp_path, monkeypat
     assert approved.loop_item.tailoring_approval.review.bullet_counts.research_per_paper == 5
     assert approved.loop_item.tailoring_approval.note.startswith("The full resume")
     assert len(tailoring.approved) == 1
+
+
+def test_tailoring_memory_learns_only_from_approved_similar_roles(tmp_path, monkeypatch) -> None:
+    service, _, loop_id = _service(tmp_path, monkeypatch)
+    _approved_memory_source(service, loop_id)
+
+    memory = service.tailoring_memory(
+        "Senior Operations Data Analyst",
+        exclude_loop_id="new-loop-item",
+    )
+    unrelated = service.tailoring_memory("Computer Vision Engineer")
+
+    assert memory.available is True
+    assert memory.role_family == "data_analytics"
+    assert memory.approved_sample_count == 1
+    assert memory.correction_count == 2
+    assert memory.recommended_preferences.preset == "technical_depth"
+    assert memory.recommended_preferences.rewrite_intensity == "strong"
+    assert memory.recommended_preferences.bullet_counts.experience_per_role == 4
+    assert memory.recommended_preferences.bullet_counts.projects_per_project == 3
+    assert memory.recommended_preferences.bullet_counts.research_per_paper == 5
+    assert "Expand both research papers" in memory.learned_instructions[0]
+    assert "past approved corrections" in memory.recommended_preferences.custom_instructions
+    assert len(memory.fingerprint) == 64
+    assert unrelated.available is False
+    assert unrelated.approved_sample_count == 0
+
+
+def test_tailoring_memory_api_and_draft_provenance(tmp_path, monkeypatch) -> None:
+    service, tailoring, source_loop_id = _service(tmp_path, monkeypatch)
+    _approved_memory_source(service, source_loop_id)
+    imported = service.import_batch(
+        ApplicationLoopBatchImportRequest.model_validate(
+            {
+                "items": [
+                    {
+                        "company": "Memory Co",
+                        "role": "Business Intelligence Analyst",
+                        "job_url": "https://jobs.example.com/memory-bi-analyst",
+                        "jd_text": (
+                            "Company: Memory Co\nRole: Business Intelligence Analyst\n"
+                            "Analyze operational data with Python and SQL, build Power BI dashboards, "
+                            "and communicate evidence-backed recommendations to business stakeholders."
+                        ),
+                    }
+                ]
+            }
+        )
+    )
+    target_loop_id = imported.outcomes[0].loop_item.loop_id
+    service.run_fit_gate(ApplicationLoopFitGateRunRequest(loop_ids=[target_loop_id]))
+
+    app.dependency_overrides[get_application_loop_service] = lambda: service
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/application-loop/tailoring-memory",
+            params={"role": "Business Intelligence Analyst", "exclude_loop_id": target_loop_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    memory = response.json()
+    created = service.create_tailoring_draft(
+        target_loop_id,
+        ApplicationLoopTailoringDraftRequest(
+            preferences=TailoringPreferences.model_validate(memory["recommended_preferences"]),
+            preference_memory_fingerprint=memory["fingerprint"],
+        ),
+    )
+
+    reference = created.loop_item.tailoring_draft
+    assert reference.preference_memory_fingerprint == memory["fingerprint"]
+    assert reference.preference_memory_role_family == "data_analytics"
+    assert reference.preference_memory_source_count == 1
+    assert reference.preferences.bullet_counts.research_per_paper == 5
+    assert tailoring.created[-1].tailoring_preferences.preset == "technical_depth"
+    assert "using learned defaults" in created.loop_item.history[-1].note
 
 
 def test_revision_requires_a_human_reason(tmp_path, monkeypatch) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -11,6 +12,8 @@ from statistics import median
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
+
+from fastapi import HTTPException
 
 from app.db import get_db_connection, init_db
 from app.schemas.application_loop import (
@@ -61,9 +64,12 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringDraftResponse,
     ApplicationLoopTailoringExportRequest,
     ApplicationLoopTailoringExportResponse,
+    ApplicationLoopTailoringMemoryResponse,
+    ApplicationLoopTailoringMemorySample,
     ApplicationLoopTransitionRequest,
 )
 from app.schemas.ats_autofill import AutofillAutopilotArmRequest
+from app.schemas.resume import TailoringPreferences
 from app.schemas.tailoring_review import (
     TailoringDraftRequest,
     TailoringFinalizeRequest,
@@ -490,6 +496,179 @@ class ApplicationLoopService:
             current_state_counts=dict(sorted(Counter(item.state for item in items).items())),
         )
 
+    def tailoring_memory(
+        self,
+        role: str,
+        *,
+        exclude_loop_id: str = "",
+    ) -> ApplicationLoopTailoringMemoryResponse:
+        role_family = self._tailoring_role_family(role)
+        role_family_label = self._tailoring_role_family_label(role_family, role)
+        records: list[dict[str, Any]] = []
+
+        for item in self.list_items(limit=100_000):
+            approval = item.tailoring_approval
+            if (
+                item.loop_id == exclude_loop_id
+                or approval is None
+                or self._tailoring_role_family(item.role) != role_family
+            ):
+                continue
+            reference = next(
+                (
+                    candidate
+                    for candidate in reversed(item.tailoring_history)
+                    if candidate.draft_id == approval.draft_id
+                ),
+                None,
+            )
+            if (
+                reference is None
+                and item.tailoring_draft is not None
+                and item.tailoring_draft.draft_id == approval.draft_id
+            ):
+                reference = item.tailoring_draft
+            if reference is None:
+                continue
+            preferences = self._tailoring_reference_preferences(reference)
+            if preferences is None:
+                continue
+
+            final_emphasis = list(preferences.emphasis)
+            review = approval.review
+            if not review.summary_accepted:
+                final_emphasis = [value for value in final_emphasis if value != "summary"]
+            if review.project_ids:
+                if "projects" not in final_emphasis:
+                    final_emphasis.append("projects")
+            else:
+                final_emphasis = [value for value in final_emphasis if value != "projects"]
+            if review.publication_ids:
+                if "research_papers" not in final_emphasis:
+                    final_emphasis.append("research_papers")
+            else:
+                final_emphasis = [value for value in final_emphasis if value != "research_papers"]
+
+            approved_preferences = preferences.model_copy(
+                deep=True,
+                update={
+                    "emphasis": final_emphasis,
+                    "bullet_counts": review.bullet_counts,
+                    "include_connection_note": bool(review.connection_note.strip()),
+                    "include_cover_letter": bool(
+                        review.cover_letter_accepted and review.cover_letter_text.strip()
+                    ),
+                },
+            )
+            revision_reasons = [
+                candidate.revision_reason.strip()
+                for candidate in item.tailoring_history
+                if candidate.version <= reference.version and candidate.revision_reason.strip()
+            ]
+            records.append(
+                {
+                    "item": item,
+                    "approval": approval,
+                    "reference": reference,
+                    "preferences": approved_preferences,
+                    "revision_reasons": revision_reasons,
+                    "instructions": [
+                        *revision_reasons,
+                        *(
+                            [preferences.custom_instructions.strip()]
+                            if preferences.custom_instructions.strip()
+                            else []
+                        ),
+                    ],
+                }
+            )
+
+        records.sort(
+            key=lambda record: self._parse_metric_timestamp(record["approval"].approved_at)
+            or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+        if not records:
+            return ApplicationLoopTailoringMemoryResponse(
+                role_family=role_family,
+                role_family_label=role_family_label,
+                approved_sample_count=0,
+                correction_count=0,
+            )
+
+        preferences = [record["preferences"] for record in records]
+        instructions = self._dedupe_text(
+            instruction
+            for record in records
+            for instruction in record["instructions"]
+        )
+        custom_instructions = self._tailoring_memory_instruction_text(instructions)
+        recommended = TailoringPreferences(
+            preset=self._recent_mode([value.preset for value in preferences]),
+            rewrite_intensity=self._recent_mode(
+                [value.rewrite_intensity for value in preferences]
+            ),
+            emphasis=list(
+                self._recent_mode([tuple(value.emphasis) for value in preferences])
+            ),
+            custom_instructions=custom_instructions,
+            include_connection_note=self._recent_mode(
+                [value.include_connection_note for value in preferences]
+            ),
+            include_cover_letter=self._recent_mode(
+                [value.include_cover_letter for value in preferences]
+            ),
+            bullet_counts={
+                "experience_per_role": self._rounded_median(
+                    [value.bullet_counts.experience_per_role for value in preferences]
+                ),
+                "projects_per_project": self._rounded_median(
+                    [value.bullet_counts.projects_per_project for value in preferences]
+                ),
+                "research_per_paper": self._rounded_median(
+                    [value.bullet_counts.research_per_paper for value in preferences]
+                ),
+            },
+        )
+        fingerprint_payload = {
+            "role_family": role_family,
+            "approvals": [
+                {
+                    "draft_id": record["reference"].draft_id,
+                    "approved_at": record["approval"].approved_at,
+                    "preferences": record["preferences"].model_dump(mode="json"),
+                    "instructions": record["instructions"],
+                }
+                for record in records
+            ],
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        source_roles = self._dedupe_text(record["item"].role for record in records)[:5]
+        samples = [
+            ApplicationLoopTailoringMemorySample(
+                company=record["item"].company,
+                role=record["item"].role,
+                approved_at=record["approval"].approved_at,
+                revision_count=len(record["revision_reasons"]),
+            )
+            for record in records[:5]
+        ]
+        return ApplicationLoopTailoringMemoryResponse(
+            role_family=role_family,
+            role_family_label=role_family_label,
+            available=True,
+            approved_sample_count=len(records),
+            correction_count=len(instructions),
+            recommended_preferences=recommended,
+            learned_instructions=instructions[:5],
+            source_roles=source_roles,
+            samples=samples,
+            latest_approval_at=records[0]["approval"].approved_at,
+            fingerprint=fingerprint,
+        )
+
     def run_fit_gate(self, payload: ApplicationLoopFitGateRunRequest) -> ApplicationLoopFitGateResponse:
         outcomes: list[ApplicationLoopFitGateOutcome] = []
         loop_ids = list(dict.fromkeys(loop_id.strip() for loop_id in payload.loop_ids if loop_id.strip()))
@@ -641,6 +820,18 @@ class ApplicationLoopService:
                 "Record what should change before regenerating the resume."
             )
 
+        preference_memory = None
+        if payload.preference_memory_fingerprint:
+            candidate_memory = self.tailoring_memory(
+                item.role,
+                exclude_loop_id=item.loop_id,
+            )
+            if (
+                candidate_memory.available
+                and candidate_memory.fingerprint == payload.preference_memory_fingerprint
+            ):
+                preference_memory = candidate_memory
+
         draft = self.tailoring_review.create_draft(
             TailoringDraftRequest(
                 url=item.job_url,
@@ -677,7 +868,13 @@ class ApplicationLoopService:
                 ApplicationLoopTransitionRequest(
                     target_state="draft_ready",
                     actor="agent",
-                    note="Initial tailoring draft generated for review.",
+                    note=(
+                        "Initial tailoring draft generated for review using learned defaults "
+                        f"from {preference_memory.approved_sample_count} approved similar-role "
+                        "application(s)."
+                        if preference_memory is not None
+                        else "Initial tailoring draft generated for review."
+                    ),
                 ),
             )
 
@@ -687,6 +884,16 @@ class ApplicationLoopService:
             base_score=draft.base_score,
             tailored_score=draft.tailored_score,
             revision_reason=revision_reason,
+            preferences=draft.preferences,
+            preference_memory_fingerprint=(
+                preference_memory.fingerprint if preference_memory is not None else ""
+            ),
+            preference_memory_role_family=(
+                preference_memory.role_family if preference_memory is not None else ""
+            ),
+            preference_memory_source_count=(
+                preference_memory.approved_sample_count if preference_memory is not None else 0
+            ),
             engine=draft.engine,
             model=draft.model,
             llm_usage=draft.llm_usage,
@@ -1814,6 +2021,101 @@ class ApplicationLoopService:
             ApplicationLoopMetricReason(reason=labels[key], count=count)
             for key, count in sorted(counts.items(), key=lambda item: (-item[1], labels[item[0]].casefold()))[:5]
         ]
+
+    def _tailoring_reference_preferences(
+        self,
+        reference: ApplicationLoopTailoringDraftRef,
+    ) -> TailoringPreferences | None:
+        if reference.preferences is not None:
+            return reference.preferences.model_copy(deep=True)
+        if self.tailoring_review is None:
+            return None
+        try:
+            return self.tailoring_review.get_draft(reference.draft_id).preferences.model_copy(
+                deep=True
+            )
+        except (HTTPException, KeyError, OSError, ValueError):
+            return None
+
+    @classmethod
+    def _tailoring_role_family(cls, role: str) -> str:
+        normalized = cls._normalize_match_text(role)
+        if not normalized:
+            return "general"
+        if "computer vision" in normalized:
+            return "computer_vision"
+        if "business analyst" in normalized:
+            return "business_analysis"
+        if "analyst" in normalized or "business intelligence" in normalized:
+            return "data_analytics"
+        if "data engineer" in normalized or "analytics engineer" in normalized:
+            return "data_engineering"
+        if "data scientist" in normalized or "data science" in normalized:
+            return "data_science"
+        if "machine learning" in normalized or re.search(r"\bml\b", normalized):
+            return "machine_learning"
+        if any(
+            marker in normalized
+            for marker in ("ai engineer", "artificial intelligence", "generative ai", "llm")
+        ):
+            return "ai_engineering"
+        if any(marker in normalized for marker in ("software engineer", "software developer")):
+            return "software_engineering"
+        return f"role:{normalized}"
+
+    @staticmethod
+    def _tailoring_role_family_label(role_family: str, role: str) -> str:
+        labels = {
+            "general": "General roles",
+            "computer_vision": "Computer vision roles",
+            "business_analysis": "Business analyst roles",
+            "data_analytics": "Data analyst roles",
+            "data_engineering": "Data engineering roles",
+            "data_science": "Data science roles",
+            "machine_learning": "Machine learning roles",
+            "ai_engineering": "AI engineering roles",
+            "software_engineering": "Software engineering roles",
+        }
+        return labels.get(role_family, f"{role.strip() or 'Similar'} roles")
+
+    @staticmethod
+    def _recent_mode(values: list[Any]) -> Any:
+        counts = Counter(values)
+        highest = max(counts.values())
+        return next(value for value in values if counts[value] == highest)
+
+    @staticmethod
+    def _rounded_median(values: list[int]) -> int:
+        return int(float(median(values)) + 0.5)
+
+    @staticmethod
+    def _dedupe_text(values: Iterable[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for raw in values:
+            value = " ".join(str(raw or "").split()).strip()
+            key = value.casefold()
+            if not value or key in seen:
+                continue
+            seen.add(key)
+            result.append(value)
+        return result
+
+    @staticmethod
+    def _tailoring_memory_instruction_text(instructions: list[str]) -> str:
+        if not instructions:
+            return ""
+        prefix = "Apply these past approved corrections when relevant: "
+        selected: list[str] = []
+        for instruction in instructions[:3]:
+            candidate = prefix + "; ".join([*selected, instruction])
+            if len(candidate) <= 600:
+                selected.append(instruction)
+                continue
+            if not selected:
+                selected.append(instruction[: 600 - len(prefix)].rstrip(" ,;:"))
+            break
+        return (prefix + "; ".join(selected))[:600]
 
     def _now(self) -> str:
         return self._clock().astimezone(UTC).isoformat()

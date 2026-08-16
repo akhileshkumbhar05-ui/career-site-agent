@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  BrainCircuit,
   BriefcaseBusiness,
   CheckCircle2,
   ChevronDown,
@@ -662,6 +663,8 @@ function BatchInboxWorkspace() {
   const [overrideNote, setOverrideNote] = React.useState("");
   const [tailoringItemId, setTailoringItemId] = React.useState("");
   const [tailoringPreferences, setTailoringPreferences] = React.useState(() => newTailoringPreferences());
+  const [tailoringMemory, setTailoringMemory] = React.useState(null);
+  const [tailoringMemoryApplied, setTailoringMemoryApplied] = React.useState(false);
   const [revisionReason, setRevisionReason] = React.useState("");
   const [draftReview, setDraftReview] = React.useState(null);
   const [reviewSelection, setReviewSelection] = React.useState(null);
@@ -852,13 +855,44 @@ function BatchInboxWorkspace() {
     }
   }
 
-  function openTailoringOptions(item) {
+  async function openTailoringOptions(item) {
     const opening = tailoringItemId !== item.loop_id;
     setTailoringItemId(opening ? item.loop_id : "");
     setTailoringPreferences(newTailoringPreferences());
+    setTailoringMemory(null);
+    setTailoringMemoryApplied(false);
     setRevisionReason("");
     setReviewItemId("");
     setOverrideNote("");
+    if (!opening) return;
+
+    setBusy(`memory:${item.loop_id}`);
+    setError("");
+    try {
+      const memory = await apiGet(
+        `/application-loop/tailoring-memory?role=${encodeURIComponent(item.role)}&exclude_loop_id=${encodeURIComponent(item.loop_id)}`
+      );
+      setTailoringMemory(memory);
+      if (memory.available) {
+        setTailoringPreferences(newTailoringPreferences(memory.recommended_preferences));
+        setTailoringMemoryApplied(true);
+      }
+    } catch (err) {
+      setError(err.message || "Could not load learned tailoring preferences.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function applyTailoringMemory() {
+    if (!tailoringMemory?.available) return;
+    setTailoringPreferences(newTailoringPreferences(tailoringMemory.recommended_preferences));
+    setTailoringMemoryApplied(true);
+  }
+
+  function resetTailoringMemory() {
+    setTailoringPreferences(newTailoringPreferences());
+    setTailoringMemoryApplied(false);
   }
 
   function showDraftReview(result) {
@@ -887,7 +921,8 @@ function BatchInboxWorkspace() {
     try {
       const result = await apiPost(`/application-loop/items/${item.loop_id}/tailoring/drafts`, {
         preferences: tailoringPreferences,
-        revision_reason: revisionReason.trim()
+        revision_reason: revisionReason.trim(),
+        preference_memory_fingerprint: tailoringMemoryApplied ? tailoringMemory?.fingerprint || "" : ""
       });
       showDraftReview(result);
       setTailoringItemId("");
@@ -901,6 +936,8 @@ function BatchInboxWorkspace() {
   }
 
   async function openTailoringDraft(item) {
+    setTailoringMemory(null);
+    setTailoringMemoryApplied(false);
     setBusy(`draft:${item.loop_id}`);
     setError("");
     try {
@@ -1452,6 +1489,9 @@ function BatchInboxWorkspace() {
                   <div className="tailoring-draft-strip">
                     <span>Resume {item.tailoring_draft.base_score} to {item.tailoring_draft.tailored_score}</span>
                     <span>{tailoringEngineLabel(item.tailoring_draft)}</span>
+                    {item.tailoring_draft.preference_memory_source_count > 0 && (
+                      <span>Learned from {item.tailoring_draft.preference_memory_source_count} approval{item.tailoring_draft.preference_memory_source_count === 1 ? "" : "s"}</span>
+                    )}
                     {item.tailoring_draft.llm_usage?.output_tokens > 0 && <span>{item.tailoring_draft.llm_usage.output_tokens} output tokens</span>}
                     {["approved_for_apply", "ats_opened"].includes(item.state) && <span className="tag good">Approved</span>}
                     {item.export_handoff && <span className={`tag ${item.export_handoff.quality_passed ? "good" : "warn"}`}>{item.export_handoff.quality_passed ? "Files ready" : "Check files"}</span>}
@@ -1591,6 +1631,13 @@ function BatchInboxWorkspace() {
 
                 {tailoringOpen && (
                   <div className="tailoring-inline-panel">
+                    <TailoringMemoryPanel
+                      memory={tailoringMemory}
+                      applied={tailoringMemoryApplied}
+                      loading={busy === `memory:${item.loop_id}`}
+                      onApply={applyTailoringMemory}
+                      onReset={resetTailoringMemory}
+                    />
                     <TailoringPreferencesEditor value={tailoringPreferences} onChange={setTailoringPreferences} />
                     <button className="icon-button primary" onClick={() => createTailoringDraft(item)} disabled={Boolean(busy)}>
                       {busy === `tailor:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
@@ -1831,6 +1878,62 @@ function FitSignal({ label, value }) {
       <span>{label}</span>
       <p>{value || "Needs review."}</p>
     </div>
+  );
+}
+
+function TailoringMemoryPanel({ memory, applied, loading, onApply, onReset }) {
+  const counts = memory?.recommended_preferences?.bullet_counts || {};
+  return (
+    <section className={`tailoring-memory-panel ${memory?.available ? "available" : "empty"}`} aria-label="Learned tailoring defaults">
+      <header>
+        <div>
+          {loading ? <Loader2 className="spin" size={18} /> : <BrainCircuit size={18} />}
+          <div>
+            <h4>Learned defaults</h4>
+            <span>{loading ? "Reading approved history" : memory?.role_family_label || "Similar-role history"}</span>
+          </div>
+        </div>
+        <span className="tag blue">0 extra calls</span>
+      </header>
+
+      {loading ? (
+        <p className="tailoring-memory-empty">Loading local preference memory...</p>
+      ) : memory?.available ? (
+        <>
+          <div className="tailoring-memory-stats">
+            <div><strong>{memory.approved_sample_count}</strong><span>approved</span></div>
+            <div><strong>{memory.correction_count}</strong><span>instructions</span></div>
+            <div><strong>{counts.experience_per_role ?? 0}</strong><span>per role</span></div>
+            <div><strong>{counts.projects_per_project ?? 0}</strong><span>per project</span></div>
+            <div><strong>{counts.research_per_paper ?? 0}</strong><span>per paper</span></div>
+          </div>
+          {(memory.learned_instructions || []).length > 0 && (
+            <div className="tailoring-memory-instructions">
+              <span>Prior approved direction</span>
+              {(memory.learned_instructions || []).slice(0, 3).map((instruction) => (
+                <p key={instruction}>{instruction}</p>
+              ))}
+            </div>
+          )}
+          <div className="tailoring-memory-footer">
+            <span>{(memory.source_roles || []).join(" / ")}</span>
+            {applied ? (
+              <button className="icon-button ghost" onClick={onReset} type="button">
+                <RotateCcw size={15} />
+                <span>Reset</span>
+              </button>
+            ) : (
+              <button className="icon-button secondary" onClick={onApply} type="button">
+                <BrainCircuit size={15} />
+                <span>Use learned</span>
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="tailoring-memory-empty">No approved similar-role history yet.</p>
+      )}
+    </section>
   );
 }
 

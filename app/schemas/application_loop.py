@@ -94,6 +94,10 @@ class ApplicationLoopTailoringDraftRef(BaseModel):
     base_score: int = Field(ge=0, le=100)
     tailored_score: int = Field(ge=0, le=100)
     revision_reason: str = ""
+    preferences: TailoringPreferences | None = None
+    preference_memory_fingerprint: str = ""
+    preference_memory_role_family: str = ""
+    preference_memory_source_count: int = Field(default=0, ge=0)
     engine: str = ""
     model: str = ""
     llm_usage: dict = Field(default_factory=dict)
@@ -266,6 +270,27 @@ class ApplicationLoopMetricsResponse(BaseModel):
     current_state_counts: dict[str, int] = Field(default_factory=dict)
 
 
+class ApplicationLoopTailoringMemorySample(BaseModel):
+    company: str
+    role: str
+    approved_at: str
+    revision_count: int = Field(ge=0)
+
+
+class ApplicationLoopTailoringMemoryResponse(BaseModel):
+    role_family: str
+    role_family_label: str
+    available: bool = False
+    approved_sample_count: int = Field(ge=0)
+    correction_count: int = Field(ge=0)
+    recommended_preferences: TailoringPreferences = Field(default_factory=TailoringPreferences)
+    learned_instructions: list[str] = Field(default_factory=list)
+    source_roles: list[str] = Field(default_factory=list)
+    samples: list[ApplicationLoopTailoringMemorySample] = Field(default_factory=list)
+    latest_approval_at: str = ""
+    fingerprint: str = ""
+
+
 BatchImportStatus = Literal["imported", "duplicate", "invalid"]
 
 
@@ -348,6 +373,7 @@ class ApplicationLoopJDUpdateRequest(BaseModel):
 class ApplicationLoopTailoringDraftRequest(BaseModel):
     preferences: TailoringPreferences = Field(default_factory=TailoringPreferences)
     revision_reason: str = Field(default="", max_length=1000)
+    preference_memory_fingerprint: str = Field(default="", max_length=64)
 
 
 class ApplicationLoopTailoringDraftResponse(BaseModel):

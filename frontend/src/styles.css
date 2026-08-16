@@ -1541,6 +1541,114 @@ input[type="range"]::-moz-range-thumb {
   justify-self: end;
 }
 
+.tailoring-memory-panel {
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.75rem 0;
+}
+
+.tailoring-memory-panel > header,
+.tailoring-memory-panel > header > div,
+.tailoring-memory-footer {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.tailoring-memory-panel > header {
+  justify-content: space-between;
+}
+
+.tailoring-memory-panel > header > div > svg {
+  color: var(--green);
+  flex: 0 0 auto;
+}
+
+.tailoring-memory-panel > header h4 {
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.tailoring-memory-panel > header div div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.tailoring-memory-panel > header div span,
+.tailoring-memory-instructions > span,
+.tailoring-memory-footer > span,
+.tailoring-memory-empty {
+  color: var(--muted-2);
+  font-size: 0.68rem;
+}
+
+.tailoring-memory-stats {
+  display: grid;
+  gap: 0.7rem 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tailoring-memory-stats > div {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 0.12rem;
+  padding-left: 0.55rem;
+}
+
+.tailoring-memory-stats > div:nth-child(1) {
+  border-color: var(--green);
+}
+
+.tailoring-memory-stats > div:nth-child(2) {
+  border-color: var(--amber);
+}
+
+.tailoring-memory-stats strong {
+  font-size: 1rem;
+}
+
+.tailoring-memory-stats span {
+  color: var(--muted-2);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+.tailoring-memory-instructions {
+  border-left: 2px solid var(--amber);
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 0.6rem;
+}
+
+.tailoring-memory-instructions p {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.tailoring-memory-footer {
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.tailoring-memory-footer > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tailoring-memory-footer .icon-button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0.32rem 0.58rem;
+}
+
+.tailoring-memory-empty {
+  line-height: 1.4;
+}
+
 .tailoring-preferences {
   display: grid;
   gap: 0.8rem;
@@ -3046,6 +3154,22 @@ th {
   .tailoring-emphasis,
   .ats-outcome-actions {
     grid-template-columns: 1fr;
+  }
+
+  .tailoring-memory-panel > header,
+  .tailoring-memory-footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .tailoring-memory-stats {
+    gap: 0.7rem 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tailoring-memory-footer > span {
+    white-space: normal;
+    width: 100%;
   }
 
   .tailoring-export-command {

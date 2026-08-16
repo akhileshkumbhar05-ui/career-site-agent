@@ -404,6 +404,36 @@ Likely files:
 - `frontend/src/main.jsx`
 - `frontend/src/styles.css`
 
+### 10. Revision Learning Loop
+
+Status: shipped.
+
+User payoff:
+- New drafts for similar roles start closer to Akhilesh's previously approved structure, reducing repeated Sonnet correction rounds.
+
+Loop pattern:
+- Human corrections become bounded, inspectable memory only after the resulting draft is approved.
+
+Implemented behavior:
+- Memory is built only from human-approved drafts and their recorded revision reasons. Unapproved generations never teach the system.
+- Deterministic role families keep analyst, data science, ML, AI engineering, computer vision, and software preferences isolated.
+- The recommendation uses stable modes for style and emphasis plus medians for dynamic per-role, per-project, and per-paper bullet counts.
+- Up to three prior approved instructions are placed in the editable direction field; resume bullets are never copied from one job to another.
+- The Batch Inbox visibly prefills learned defaults and provides `Use learned` and `Reset` controls before the existing Sonnet call.
+- A SHA-256 fingerprint and approved-source count are stored on the resulting draft reference for provenance.
+- Reading and applying memory makes zero additional model calls. Learned prompt context is capped at 600 characters, normally adding fewer than 200 input tokens to the existing tailoring call.
+
+Endpoint:
+- `GET /application-loop/tailoring-memory?role={role}&exclude_loop_id={loop_id}`
+
+Likely files:
+- `app/schemas/application_loop.py`
+- `app/services/application_loop_service.py`
+- `app/api/application_loop.py`
+- `frontend/src/main.jsx`
+- `frontend/src/styles.css`
+- `tests/test_application_tailoring_loop.py`
+
 ## Recommended Build Order
 
 For the next working session, ship in this order:
@@ -416,6 +446,7 @@ For the next working session, ship in this order:
 6. Export Handoff Loop
 7. Recruiter Outreach Batch
 8. Loop Metrics Dashboard
+9. Revision Learning Loop
 
 The first two are the foundation. They protect your manual system from being broken by later automation.
 

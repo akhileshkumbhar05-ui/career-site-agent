@@ -27,6 +27,7 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringDraftResponse,
     ApplicationLoopTailoringExportRequest,
     ApplicationLoopTailoringExportResponse,
+    ApplicationLoopTailoringMemoryResponse,
 )
 from app.schemas.tailoring_review import TailoringPreviewRenderResponse, TailoringReviewSelection
 from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
@@ -57,6 +58,15 @@ def get_metrics(
     service: ApplicationLoopService = Depends(get_application_loop_service),
 ) -> ApplicationLoopMetricsResponse:
     return service.metrics(window)
+
+
+@router.get("/tailoring-memory", response_model=ApplicationLoopTailoringMemoryResponse)
+def get_tailoring_memory(
+    role: str = Query(default="", max_length=500),
+    exclude_loop_id: str = Query(default="", max_length=100),
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringMemoryResponse:
+    return service.tailoring_memory(role, exclude_loop_id=exclude_loop_id)
 
 
 @router.post("/fit-gate", response_model=ApplicationLoopFitGateResponse)
