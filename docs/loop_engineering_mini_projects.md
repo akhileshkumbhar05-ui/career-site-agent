@@ -52,6 +52,8 @@ After each mini-project:
 
 ### 1. Application Loop State Model
 
+Implementation status: shipped as the deterministic foundation for later loops.
+
 User payoff:
 - A single shared vocabulary for where each job is in the process.
 - Prevents the backend, Third Eye, n8n, and Sheets from inventing conflicting statuses.
@@ -82,6 +84,29 @@ Likely files:
 - `app/schemas/application_loop.py`
 - `app/services/application_loop_service.py`
 - `tests/test_application_loop_service.py`
+
+What this mini-project teaches:
+- Agent orchestration needs explicit state, not a pile of loosely related automation flags.
+- The transition table is deterministic; no LLM is needed to decide whether a transition is legal.
+- Every transition creates an audit event, so later metrics can measure revision cycles and waiting time.
+- `submitted_confirmed` is a human-only gate. An agent or scheduled workflow cannot claim an application was submitted.
+
+Implemented transition loop:
+
+```text
+imported -> fit_checked -> draft_ready -> approved_for_apply -> ats_opened
+              |                ^  |                |               |
+              |                |  v                v               v
+              +-> skipped      +-- revision_requested      submitted_confirmed
+                                                               |
+                                              +----------------+----------------+
+                                              v                                 v
+                                         sheet_logged -> recruiter_note_ready -> outreach_done
+```
+
+`approved_for_apply` can also move directly to `submitted_confirmed` when Akhilesh applies
+without using the ATS assistant. Pre-submission states may move to `skipped` when new evidence
+changes the decision.
 
 ### 2. Ten-Job Batch Inbox
 
@@ -272,4 +297,3 @@ The first two are the foundation. They protect your manual system from being bro
 - It produces useful artifacts even when the user chooses not to apply.
 - It preserves the user's existing Google Sheets system instead of forcing a redesign.
 - It demonstrates orchestration across FastAPI, n8n, browser extension, local files, and Google Sheets.
-
