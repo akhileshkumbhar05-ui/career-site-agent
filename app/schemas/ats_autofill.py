@@ -98,6 +98,7 @@ class AutofillContextRequest(BaseModel):
 
 
 class AutofillAutopilotArmRequest(BaseModel):
+    loop_id: str = ""
     url: str = ""
     apply_plan: dict = Field(default_factory=dict)
     apply_plan_path: str = ""
@@ -109,6 +110,7 @@ class AutofillAutopilotArmRequest(BaseModel):
 class AutofillAutopilotArmResponse(BaseModel):
     armed: bool
     task_id: str = ""
+    loop_id: str = ""
     target_url: str = ""
     apply_plan_path: str = ""
     expires_at: str = ""
@@ -125,6 +127,7 @@ class AutofillAutopilotContextRequest(BaseModel):
 class AutofillAutopilotContextResponse(BaseModel):
     enabled: bool
     task_id: str = ""
+    loop_id: str = ""
     overwrite: bool = False
     apply_plan: dict = Field(default_factory=dict)
     apply_plan_path: str = ""
@@ -144,6 +147,7 @@ class AutofillAutopilotResultRequest(BaseModel):
 
 class AutofillAutopilotResultResponse(BaseModel):
     recorded: bool
+    loop_id: str = ""
     message: str = ""
 
 

@@ -25,6 +25,13 @@ ApplicationLoopState = Literal[
 ApplicationLoopActor = Literal["human", "agent", "system"]
 FitGateDecision = Literal["apply", "maybe", "skip"]
 FitGateEvaluationStatus = Literal["complete", "needs_jd"]
+ATSAssistStatus = Literal[
+    "armed",
+    "safe_fields_filled",
+    "review_required",
+    "technical_issue",
+    "submitted_confirmed",
+]
 
 
 class ApplicationLoopCreateRequest(BaseModel):
@@ -121,6 +128,37 @@ class ApplicationLoopExportHandoff(BaseModel):
     files_written: list[str] = Field(default_factory=list)
 
 
+class ApplicationLoopATSReviewItem(BaseModel):
+    field_id: str = ""
+    label: str = ""
+    action: str = ""
+    reason: str = ""
+    sensitive: bool = False
+    source: str = ""
+
+
+class ApplicationLoopATSAssist(BaseModel):
+    version: int = Field(ge=1)
+    task_id: str
+    status: ATSAssistStatus = "armed"
+    target_url: str
+    apply_plan_path: str
+    preferred_resume_path: str
+    preferred_resume_format: Literal["pdf", "docx"]
+    opened_at: str
+    expires_at: str
+    last_result_at: str = ""
+    filled_count: int = Field(default=0, ge=0)
+    total_fields: int = Field(default=0, ge=0)
+    fillable_count: int = Field(default=0, ge=0)
+    manual_count: int = Field(default=0, ge=0)
+    skipped_count: int = Field(default=0, ge=0)
+    review_items: list[ApplicationLoopATSReviewItem] = Field(default_factory=list)
+    quality_review_note: str = ""
+    technical_issue_note: str = ""
+    sheets_status_proposal: str = ""
+
+
 class ApplicationLoopItem(BaseModel):
     loop_id: str
     company: str
@@ -138,6 +176,7 @@ class ApplicationLoopItem(BaseModel):
     tailoring_history: list[ApplicationLoopTailoringDraftRef] = Field(default_factory=list)
     tailoring_approval: ApplicationLoopTailoringApproval | None = None
     export_handoff: ApplicationLoopExportHandoff | None = None
+    ats_assist: ApplicationLoopATSAssist | None = None
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
@@ -252,4 +291,28 @@ class ApplicationLoopTailoringExportRequest(BaseModel):
 class ApplicationLoopTailoringExportResponse(BaseModel):
     loop_item: ApplicationLoopItem
     handoff: ApplicationLoopExportHandoff
+    message: str
+
+
+class ApplicationLoopATSArmRequest(BaseModel):
+    expires_minutes: int = Field(default=30, ge=1, le=240)
+    quality_review_note: str = Field(default="", max_length=1000)
+
+
+class ApplicationLoopATSAssistResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    assist: ApplicationLoopATSAssist
+    message: str
+
+
+class ApplicationLoopATSOutcomeRequest(BaseModel):
+    outcome: Literal["technical_issue", "submitted_confirmed"]
+    note: str = Field(min_length=3, max_length=1000)
+    human_confirmed_submission: bool = False
+
+
+class ApplicationLoopATSOutcomeResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    assist: ApplicationLoopATSAssist
+    sheet_row_proposal: dict[str, str]
     message: str

@@ -3,6 +3,10 @@ from fastapi.responses import FileResponse
 
 from app.dependencies import get_application_loop_service
 from app.schemas.application_loop import (
+    ApplicationLoopATSArmRequest,
+    ApplicationLoopATSAssistResponse,
+    ApplicationLoopATSOutcomeRequest,
+    ApplicationLoopATSOutcomeResponse,
     ApplicationLoopBatchImportRequest,
     ApplicationLoopBatchResponse,
     ApplicationLoopFitGateResponse,
@@ -208,3 +212,59 @@ def download_tailoring_export(
         else "application/pdf"
     )
     return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@router.post(
+    "/items/{loop_id}/ats-assist/arm",
+    response_model=ApplicationLoopATSAssistResponse,
+)
+def arm_ats_assist(
+    loop_id: str,
+    payload: ApplicationLoopATSArmRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopATSAssistResponse:
+    try:
+        return service.arm_ats_assist(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Could not prepare ATS handoff: {exc}") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/items/{loop_id}/ats-assist",
+    response_model=ApplicationLoopATSAssistResponse,
+)
+def sync_ats_assist(
+    loop_id: str,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopATSAssistResponse:
+    try:
+        return service.sync_ats_assist(loop_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/ats-assist/outcome",
+    response_model=ApplicationLoopATSOutcomeResponse,
+)
+def record_ats_outcome(
+    loop_id: str,
+    payload: ApplicationLoopATSOutcomeRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopATSOutcomeResponse:
+    try:
+        return service.record_ats_outcome(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -12,6 +12,12 @@ from uuid import uuid4
 
 from app.db import get_db_connection, init_db
 from app.schemas.application_loop import (
+    ApplicationLoopATSArmRequest,
+    ApplicationLoopATSAssist,
+    ApplicationLoopATSAssistResponse,
+    ApplicationLoopATSOutcomeRequest,
+    ApplicationLoopATSOutcomeResponse,
+    ApplicationLoopATSReviewItem,
     ApplicationLoopBatchImportRequest,
     ApplicationLoopBatchItemRequest,
     ApplicationLoopBatchOutcome,
@@ -39,6 +45,7 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringExportResponse,
     ApplicationLoopTransitionRequest,
 )
+from app.schemas.ats_autofill import AutofillAutopilotArmRequest
 from app.schemas.tailoring_review import (
     TailoringDraftRequest,
     TailoringFinalizeRequest,
@@ -48,6 +55,7 @@ from app.schemas.tailoring_review import (
 from app.services.tracker_service import TrackerService
 
 if TYPE_CHECKING:
+    from app.services.autofill_autopilot_service import AutofillAutopilotService
     from app.services.llm_match_service import LLMMatchService
     from app.services.tailoring_review_service import TailoringReviewService
 
@@ -78,10 +86,12 @@ class ApplicationLoopService:
         clock: Callable[[], datetime] | None = None,
         matcher: LLMMatchService | None = None,
         tailoring_review: TailoringReviewService | None = None,
+        autofill_autopilot: AutofillAutopilotService | None = None,
     ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.matcher = matcher
         self.tailoring_review = tailoring_review
+        self.autofill_autopilot = autofill_autopilot
         init_db()
 
     def create(self, payload: ApplicationLoopCreateRequest) -> ApplicationLoopItem:
@@ -524,6 +534,7 @@ class ApplicationLoopService:
         updated.tailoring_history.append(reference)
         updated.tailoring_approval = None
         updated.export_handoff = None
+        updated.ats_assist = None
         self._save_item(updated)
         return ApplicationLoopTailoringDraftResponse(loop_item=updated, draft=draft)
 
@@ -587,6 +598,7 @@ class ApplicationLoopService:
             approved_at=self._now(),
         )
         updated.export_handoff = None
+        updated.ats_assist = None
         self._save_item(updated)
         return ApplicationLoopTailoringApproveResponse(
             loop_item=updated,
@@ -653,6 +665,7 @@ class ApplicationLoopService:
         )
         updated = item.model_copy(deep=True)
         updated.export_handoff = handoff
+        updated.ats_assist = None
         updated.updated_at = handoff.exported_at
         updated.history.append(
             ApplicationLoopEvent(
@@ -706,6 +719,222 @@ class ApplicationLoopService:
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(f"{file_format.upper()} export file no longer exists.")
         return path
+
+    def arm_ats_assist(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopATSArmRequest,
+    ) -> ApplicationLoopATSAssistResponse:
+        item = self.get_item(loop_id)
+        if self.autofill_autopilot is None:
+            raise RuntimeError("ATS Apply Assist is not configured.")
+        if item.state not in {"approved_for_apply", "ats_opened"}:
+            raise InvalidApplicationLoopTransition(
+                f"ATS Apply Assist cannot open from '{item.state}'. Approve and export the resume first."
+            )
+        handoff = item.export_handoff
+        if handoff is None or not handoff.docx_ready:
+            raise InvalidApplicationLoopTransition("Generate the approved resume export before opening the ATS.")
+        if not handoff.prepared_apply_plan_path or not Path(handoff.prepared_apply_plan_path).is_file():
+            raise InvalidApplicationLoopTransition("The approved export is missing its ATS apply plan. Regenerate it first.")
+        if not handoff.quality_passed and len(payload.quality_review_note.strip()) < 3:
+            raise InvalidApplicationLoopTransition(
+                "The export quality checks need a short human review note before ATS handoff."
+            )
+
+        target_url = item.canonical_job_url or item.job_url
+        if not target_url:
+            raise InvalidApplicationLoopTransition("This application does not have a canonical ATS URL.")
+        preferred_format = "pdf" if handoff.pdf_ready and Path(handoff.prepared_resume_pdf_path).is_file() else "docx"
+        preferred_path = (
+            handoff.prepared_resume_pdf_path if preferred_format == "pdf" else handoff.prepared_resume_docx_path
+        )
+        if not preferred_path or not Path(preferred_path).is_file():
+            raise InvalidApplicationLoopTransition("The approved resume file is no longer available. Regenerate it first.")
+
+        armed = self.autofill_autopilot.arm(
+            AutofillAutopilotArmRequest(
+                loop_id=loop_id,
+                url=target_url,
+                apply_plan_path=handoff.prepared_apply_plan_path,
+                overwrite=False,
+                open_browser=False,
+                expires_minutes=payload.expires_minutes,
+            )
+        )
+        if not armed.armed:
+            raise RuntimeError(armed.message or "ATS Apply Assist could not be armed.")
+
+        version = (item.ats_assist.version if item.ats_assist else 0) + 1
+        assist = ApplicationLoopATSAssist(
+            version=version,
+            task_id=armed.task_id,
+            status="armed",
+            target_url=armed.target_url,
+            apply_plan_path=handoff.prepared_apply_plan_path,
+            preferred_resume_path=preferred_path,
+            preferred_resume_format=preferred_format,
+            opened_at=self._now(),
+            expires_at=armed.expires_at,
+            quality_review_note=payload.quality_review_note.strip(),
+        )
+        quality_note = (
+            f" Quality review: {payload.quality_review_note.strip()}"
+            if not handoff.quality_passed
+            else ""
+        )
+        if item.state == "approved_for_apply":
+            updated = self.transition(
+                item,
+                ApplicationLoopTransitionRequest(
+                    target_state="ats_opened",
+                    actor="human",
+                    note=(
+                        "ATS Apply Assist armed for safe fields only; resume upload review and final submit remain manual."
+                        f"{quality_note}"
+                    ),
+                ),
+            )
+        else:
+            updated = item.model_copy(deep=True)
+            updated.updated_at = assist.opened_at
+            updated.history.append(
+                ApplicationLoopEvent(
+                    from_state=item.state,
+                    to_state=item.state,
+                    actor="human",
+                    note=f"ATS Apply Assist re-armed as handoff v{version}.{quality_note}",
+                    occurred_at=assist.opened_at,
+                )
+            )
+        updated.ats_assist = assist
+        self._save_item(updated)
+        return ApplicationLoopATSAssistResponse(
+            loop_item=updated,
+            assist=assist,
+            message="Application opened for guarded prefill. Review every field, upload the approved resume manually, and submit yourself.",
+        )
+
+    def sync_ats_assist(self, loop_id: str) -> ApplicationLoopATSAssistResponse:
+        item = self.get_item(loop_id)
+        if self.autofill_autopilot is None:
+            raise RuntimeError("ATS Apply Assist is not configured.")
+        if item.ats_assist is None:
+            raise InvalidApplicationLoopTransition("This application does not have an ATS Apply Assist handoff.")
+
+        task = self.autofill_autopilot.get_task(item.ats_assist.task_id)
+        result = dict(task.get("last_result") or {}) if task else {}
+        if not result:
+            message = (
+                "ATS Apply Assist is armed and waiting for Third Eye to report the application form."
+                if item.ats_assist.status == "armed"
+                else "The latest ATS review result is shown; Third Eye has not reported a newer form result."
+            )
+            return ApplicationLoopATSAssistResponse(
+                loop_item=item,
+                assist=item.ats_assist,
+                message=message,
+            )
+
+        review_items: list[ApplicationLoopATSReviewItem] = []
+        seen: set[str] = set()
+        for raw in result.get("results") or []:
+            action = str(raw.get("action") or "")
+            sensitive = bool(raw.get("sensitive"))
+            if not sensitive and action not in {"manual_upload", "manual_review", "skip_sensitive", "skip_unknown"}:
+                continue
+            key = str(raw.get("field_id") or raw.get("label") or action)
+            if key in seen:
+                continue
+            seen.add(key)
+            review_items.append(
+                ApplicationLoopATSReviewItem(
+                    field_id=str(raw.get("field_id") or ""),
+                    label=str(raw.get("label") or "Unrecognized application question"),
+                    action=action,
+                    reason=str(raw.get("reason") or "Review this field manually."),
+                    sensitive=sensitive,
+                    source=str(raw.get("source") or ""),
+                )
+            )
+
+        updated = item.model_copy(deep=True)
+        terminal_outcome = updated.ats_assist.status in {"technical_issue", "submitted_confirmed"}
+        if not terminal_outcome:
+            updated.ats_assist.status = "review_required" if review_items else "safe_fields_filled"
+        updated.ats_assist.last_result_at = str(task.get("last_result_at") or self._now())
+        updated.ats_assist.filled_count = max(0, int(result.get("filled_count") or 0))
+        updated.ats_assist.total_fields = max(0, int(result.get("total_fields") or 0))
+        updated.ats_assist.fillable_count = max(0, int(result.get("fillable_count") or 0))
+        updated.ats_assist.manual_count = max(0, int(result.get("manual_count") or 0))
+        updated.ats_assist.skipped_count = max(0, int(result.get("skipped_count") or 0))
+        updated.ats_assist.review_items = review_items
+        updated.updated_at = updated.ats_assist.last_result_at
+        self._save_item(updated)
+        if terminal_outcome:
+            message = "The latest field report was recorded without changing the human-confirmed ATS outcome."
+        else:
+            message = (
+                f"Safe prefill reported. Review {len(review_items)} manual or protected field"
+                f"{'s' if len(review_items) != 1 else ''} before submitting."
+                if review_items
+                else "Safe prefill reported. Review the complete form and upload the approved resume before submitting."
+            )
+        return ApplicationLoopATSAssistResponse(loop_item=updated, assist=updated.ats_assist, message=message)
+
+    def record_ats_outcome(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopATSOutcomeRequest,
+    ) -> ApplicationLoopATSOutcomeResponse:
+        item = self.get_item(loop_id)
+        if item.state != "ats_opened" or item.ats_assist is None:
+            raise InvalidApplicationLoopTransition("Open ATS Apply Assist before recording an application outcome.")
+
+        occurred_at = self._now()
+        if payload.outcome == "submitted_confirmed":
+            if not payload.human_confirmed_submission:
+                raise InvalidApplicationLoopTransition(
+                    "Manual submission confirmation is required before marking this application submitted."
+                )
+            updated = self.transition(
+                item,
+                ApplicationLoopTransitionRequest(
+                    target_state="submitted_confirmed",
+                    actor="human",
+                    note=payload.note,
+                    human_confirmed_submission=True,
+                ),
+            )
+            updated.ats_assist.status = "submitted_confirmed"
+            status = "Applied"
+            message = "Manual submission confirmed. The Applied row is ready for the Sheets logging loop."
+        else:
+            updated = item.model_copy(deep=True)
+            updated.updated_at = occurred_at
+            updated.ats_assist.status = "technical_issue"
+            updated.ats_assist.technical_issue_note = payload.note.strip()
+            updated.history.append(
+                ApplicationLoopEvent(
+                    from_state=item.state,
+                    to_state=item.state,
+                    actor="human",
+                    note=f"ATS technical issue recorded: {payload.note.strip()}",
+                    occurred_at=occurred_at,
+                )
+            )
+            status = "Not Yet Applied Due to Technical Issue"
+            message = "Portal failure recorded. A technical-issue row is ready for the Sheets logging loop; this job was not marked Applied."
+
+        updated.ats_assist.sheets_status_proposal = status
+        sheet_row = self._sheet_row_proposal(updated, status=status, occurred_at=occurred_at)
+        self._save_item(updated)
+        return ApplicationLoopATSOutcomeResponse(
+            loop_item=updated,
+            assist=updated.ats_assist,
+            sheet_row_proposal=sheet_row,
+            message=message,
+        )
 
     @staticmethod
     def _validate_current_draft(item: ApplicationLoopItem, draft_id: str) -> None:
@@ -1065,6 +1294,40 @@ class ApplicationLoopService:
     @staticmethod
     def _normalize_match_text(value: str) -> str:
         return re.sub(r"\s+", " ", value.strip()).casefold()
+
+    @staticmethod
+    def _sheet_row_proposal(
+        item: ApplicationLoopItem,
+        *,
+        status: str,
+        occurred_at: str,
+    ) -> dict[str, str]:
+        link = item.canonical_job_url or item.job_url
+        host = urlsplit(link).netloc.casefold()
+        if "linkedin.com" in host:
+            applied_using = "LinkedIn"
+        elif "indeed.com" in host:
+            applied_using = "Indeed"
+        elif "ziprecruiter.com" in host:
+            applied_using = "ZipRecruiter"
+        elif "jobright.ai" in host:
+            applied_using = "Jobright.ai"
+        else:
+            applied_using = "Company Website"
+        try:
+            date_applied = datetime.fromisoformat(occurred_at).astimezone().strftime("%m/%d/%Y")
+        except ValueError:
+            date_applied = datetime.now().strftime("%m/%d/%Y")
+        return {
+            "Date": date_applied,
+            "Company Applied": item.company,
+            "Role": item.role,
+            "Salary Quoted while Applying": "N/A",
+            "Job Posted On": item.source or "Unknown",
+            "Applied Using": applied_using,
+            "Status": status,
+            "Link": link,
+        }
 
     def _now(self) -> str:
         return self._clock().astimezone(UTC).isoformat()

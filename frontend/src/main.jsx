@@ -25,6 +25,7 @@ import {
   Save,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
@@ -406,6 +407,16 @@ function tailoringEngineLabel(value) {
   return value?.model || value?.engine || "Local";
 }
 
+function atsStatusLabel(value) {
+  return {
+    armed: "Waiting for Third Eye",
+    safe_fields_filled: "Safe fields filled",
+    review_required: "Manual review needed",
+    technical_issue: "Portal issue",
+    submitted_confirmed: "Submitted manually"
+  }[value] || "Not started";
+}
+
 function newBatchEntry(overrides = {}) {
   batchEntrySequence += 1;
   return {
@@ -441,6 +452,9 @@ function BatchInboxWorkspace() {
   const [approvalNote, setApprovalNote] = React.useState("");
   const [exportRoot, setExportRoot] = React.useState("");
   const [renderExportPdf, setRenderExportPdf] = React.useState(true);
+  const [atsPanelId, setAtsPanelId] = React.useState("");
+  const [atsNotes, setAtsNotes] = React.useState({});
+  const [submissionConfirmations, setSubmissionConfirmations] = React.useState({});
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
@@ -748,6 +762,92 @@ function BatchInboxWorkspace() {
     }
   }
 
+  function replaceLoopItem(loopItem) {
+    if (!loopItem) return;
+    setInbox((current) => current.map((item) => item.loop_id === loopItem.loop_id ? loopItem : item));
+    setDraftReview((current) => (
+      current?.loop_item?.loop_id === loopItem.loop_id
+        ? { ...current, loop_item: loopItem }
+        : current
+    ));
+  }
+
+  async function armAtsAssist(item) {
+    const pendingWindow = window.open("about:blank", "_blank");
+    setBusy(`ats-arm:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost(`/application-loop/items/${item.loop_id}/ats-assist/arm`, {
+        expires_minutes: 30,
+        quality_review_note: item.export_handoff?.quality_passed ? "" : String(atsNotes[item.loop_id] || "").trim()
+      });
+      replaceLoopItem(result.loop_item);
+      setAtsPanelId(item.loop_id);
+      setAtsNotes((current) => ({ ...current, [item.loop_id]: "" }));
+      setMessage(result.message);
+      if (pendingWindow) pendingWindow.location.replace(result.assist.target_url);
+      else window.open(result.assist.target_url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      pendingWindow?.close();
+      setError(err.message || "Could not open ATS Apply Assist.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function syncAtsAssist(item) {
+    setBusy(`ats-sync:${item.loop_id}`);
+    setError("");
+    try {
+      const result = await apiGet(`/application-loop/items/${item.loop_id}/ats-assist`);
+      replaceLoopItem(result.loop_item);
+      setMessage(result.message);
+    } catch (err) {
+      setError(err.message || "Could not refresh the ATS result.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleAtsPanel(item) {
+    if (atsPanelId === item.loop_id) {
+      setAtsPanelId("");
+      return;
+    }
+    setAtsPanelId(item.loop_id);
+    if (item.ats_assist) await syncAtsAssist(item);
+  }
+
+  async function recordAtsOutcome(item, outcome) {
+    const note = String(atsNotes[item.loop_id] || "").trim();
+    if (note.length < 3) {
+      setError("Add a short outcome note first.");
+      return;
+    }
+    const confirmed = Boolean(submissionConfirmations[item.loop_id]);
+    if (outcome === "submitted_confirmed" && !confirmed) {
+      setError("Confirm that you manually submitted the application first.");
+      return;
+    }
+    setBusy(`ats-outcome:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost(`/application-loop/items/${item.loop_id}/ats-assist/outcome`, {
+        outcome,
+        note,
+        human_confirmed_submission: outcome === "submitted_confirmed" && confirmed
+      });
+      replaceLoopItem(result.loop_item);
+      setMessage(result.message);
+    } catch (err) {
+      setError(err.message || "Could not record the ATS outcome.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
   const readyCount = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim()).length;
   const pendingFitIds = inbox.filter((item) => item.state === "imported").map((item) => item.loop_id);
@@ -915,9 +1015,14 @@ function BatchInboxWorkspace() {
             const jdEditorOpen = Object.prototype.hasOwnProperty.call(jdEditors, item.loop_id);
             const reviewOpen = reviewItemId === item.loop_id;
             const tailoringOpen = tailoringItemId === item.loop_id;
+            const atsPanelOpen = atsPanelId === item.loop_id;
             const hasTailoringDraft = Boolean(item.tailoring_draft);
             const canStartTailoring = item.state === "fit_checked" && fit?.decision === "apply";
+            const canArmAts = Boolean(item.export_handoff) && ["approved_for_apply", "ats_opened"].includes(item.state);
             const decisionTone = fit?.decision === "apply" ? "good" : fit?.decision === "skip" ? "bad" : "warn";
+            const atsTone = item.ats_assist?.status === "submitted_confirmed" || item.ats_assist?.status === "safe_fields_filled"
+              ? "good"
+              : item.ats_assist?.status === "armed" ? "blue" : "warn";
             return (
               <article className={`batch-inbox-item ${hasCompleteFit ? `fit-${fit.decision}` : ""}`} key={item.loop_id}>
                 <div className="batch-inbox-title">
@@ -940,6 +1045,7 @@ function BatchInboxWorkspace() {
                   {item.tailoring_draft && <span>Draft v{item.tailoring_draft.version}</span>}
                   {item.revision_count > 0 && <span>{item.revision_count} revision{item.revision_count === 1 ? "" : "s"}</span>}
                   {item.export_handoff && <span>Export v{item.export_handoff.version}</span>}
+                  {item.ats_assist && <span>ATS assist v{item.ats_assist.version}</span>}
                 </div>
                 {item.job_url && (
                   <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
@@ -963,9 +1069,21 @@ function BatchInboxWorkspace() {
                     <span>Resume {item.tailoring_draft.base_score} to {item.tailoring_draft.tailored_score}</span>
                     <span>{tailoringEngineLabel(item.tailoring_draft)}</span>
                     {item.tailoring_draft.llm_usage?.output_tokens > 0 && <span>{item.tailoring_draft.llm_usage.output_tokens} output tokens</span>}
-                    {item.state === "approved_for_apply" && <span className="tag good">Approved</span>}
+                    {["approved_for_apply", "ats_opened"].includes(item.state) && <span className="tag good">Approved</span>}
                     {item.export_handoff && <span className={`tag ${item.export_handoff.quality_passed ? "good" : "warn"}`}>{item.export_handoff.quality_passed ? "Files ready" : "Check files"}</span>}
+                    {item.ats_assist && <span className={`tag ${atsTone}`}>{atsStatusLabel(item.ats_assist.status)}</span>}
                   </div>
+                )}
+                {canArmAts && !item.ats_assist && !item.export_handoff.quality_passed && (
+                  <label className="ats-quality-gate">
+                    <span>Quality review note</span>
+                    <textarea
+                      value={atsNotes[item.loop_id] || ""}
+                      onChange={(event) => setAtsNotes((current) => ({ ...current, [item.loop_id]: event.target.value }))}
+                      placeholder="Review the failed checks and record why this export is still appropriate to use."
+                      maxLength={1000}
+                    />
+                  </label>
                 )}
 
                 {hasCompleteFit && (
@@ -1015,6 +1133,18 @@ function BatchInboxWorkspace() {
                       <Download size={16} />
                       <span>PDF</span>
                     </a>
+                  )}
+                  {canArmAts && !item.ats_assist && (
+                    <button className="icon-button primary" onClick={() => armAtsAssist(item)} disabled={Boolean(busy) || (!item.export_handoff.quality_passed && String(atsNotes[item.loop_id] || "").trim().length < 3)}>
+                      {busy === `ats-arm:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />}
+                      <span>Open ATS assist</span>
+                    </button>
+                  )}
+                  {item.ats_assist && (
+                    <button className="icon-button secondary" onClick={() => toggleAtsPanel(item)} disabled={Boolean(busy)}>
+                      {busy === `ats-sync:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <ShieldCheck size={16} />}
+                      <span>{atsPanelOpen ? "Close ATS status" : "ATS status"}</span>
+                    </button>
                   )}
                   {item.state === "fit_checked" && hasCompleteFit && (
                     <button className="icon-button ghost compact-icon" title="Recheck Fit Gate; may use Claude" onClick={() => runFitGate([item.loop_id], true)} disabled={Boolean(busy)}>
@@ -1072,6 +1202,91 @@ function BatchInboxWorkspace() {
                     </button>
                   </div>
                 )}
+
+                {atsPanelOpen && item.ats_assist && (
+                  <section className="ats-assist-panel" aria-label="ATS Apply Assist status">
+                    <header className="ats-assist-header">
+                      <div>
+                        <ShieldCheck size={18} />
+                        <div>
+                          <h4>ATS Apply Assist</h4>
+                          <span>{atsStatusLabel(item.ats_assist.status)}</span>
+                        </div>
+                      </div>
+                      <button className="icon-button ghost compact-icon" title="Refresh ATS result" onClick={() => syncAtsAssist(item)} disabled={Boolean(busy)}>
+                        {busy === `ats-sync:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                      </button>
+                    </header>
+
+                    <div className="ats-assist-stats">
+                      <div><strong>{item.ats_assist.filled_count}</strong><span>safe filled</span></div>
+                      <div><strong>{item.ats_assist.manual_count}</strong><span>manual</span></div>
+                      <div><strong>{item.ats_assist.skipped_count}</strong><span>protected</span></div>
+                    </div>
+
+                    <p className="ats-resume-file" title={item.ats_assist.preferred_resume_path}>
+                      <FileText size={15} />
+                      <span>{item.ats_assist.preferred_resume_format.toUpperCase()} resume: {item.ats_assist.preferred_resume_path.split(/[\\/]/).pop()}</span>
+                    </p>
+
+                    {(item.ats_assist.review_items || []).length > 0 && (
+                      <div className="ats-review-checklist">
+                        <h5>Review before submit</h5>
+                        {item.ats_assist.review_items.map((review) => (
+                          <label key={`${review.field_id}-${review.label}`}>
+                            <input type="checkbox" />
+                            <span>
+                              <strong>{review.label}</strong>
+                              <small>{review.sensitive ? "Protected field left blank" : review.reason || "Answer manually"}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="ats-hard-stop"><ShieldAlert size={15} /> Resume upload, sensitive answers, final review, and submit stay with you.</p>
+
+                    {item.ats_assist.sheets_status_proposal && (
+                      <p className="ats-sheet-proposal"><strong>Sheets proposal:</strong> {item.ats_assist.sheets_status_proposal}</p>
+                    )}
+
+                    {item.state === "ats_opened" && (
+                      <div className="ats-outcome-controls">
+                        <label>
+                          <span>Outcome note</span>
+                          <textarea
+                            value={atsNotes[item.loop_id] || ""}
+                            onChange={(event) => setAtsNotes((current) => ({ ...current, [item.loop_id]: event.target.value }))}
+                            placeholder={item.export_handoff?.quality_passed ? "What happened in the portal?" : "Review the failed export checks before opening the ATS."}
+                            maxLength={1000}
+                          />
+                        </label>
+                        <div className="ats-outcome-actions">
+                          <button className="icon-button secondary" onClick={() => recordAtsOutcome(item, "technical_issue")} disabled={String(atsNotes[item.loop_id] || "").trim().length < 3 || Boolean(busy)}>
+                            <AlertTriangle size={16} />
+                            <span>Portal issue</span>
+                          </button>
+                          <button className="icon-button ghost" onClick={() => armAtsAssist(item)} disabled={Boolean(busy) || (!item.export_handoff?.quality_passed && String(atsNotes[item.loop_id] || "").trim().length < 3)}>
+                            <ExternalLink size={16} />
+                            <span>Reopen application</span>
+                          </button>
+                        </div>
+                        <label className="ats-submit-confirmation">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(submissionConfirmations[item.loop_id])}
+                            onChange={(event) => setSubmissionConfirmations((current) => ({ ...current, [item.loop_id]: event.target.checked }))}
+                          />
+                          <span>I manually submitted this application and saw the portal confirmation.</span>
+                        </label>
+                        <button className="icon-button primary ats-submit-button" onClick={() => recordAtsOutcome(item, "submitted_confirmed")} disabled={!submissionConfirmations[item.loop_id] || String(atsNotes[item.loop_id] || "").trim().length < 3 || Boolean(busy)}>
+                          {busy === `ats-outcome:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+                          <span>Confirm manual submission</span>
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
               </article>
             );
           }) : (
@@ -1102,6 +1317,9 @@ function BatchInboxWorkspace() {
           renderExportPdf={renderExportPdf}
           onRenderExportPdfChange={setRenderExportPdf}
           onExport={exportApprovedTailoring}
+          onOpenAts={() => armAtsAssist(draftReview.loop_item)}
+          atsNote={atsNotes[draftReview.loop_item.loop_id] || ""}
+          onAtsNoteChange={(value) => setAtsNotes((current) => ({ ...current, [draftReview.loop_item.loop_id]: value }))}
           onRegenerate={() => createTailoringDraft(draftReview.loop_item)}
           onClose={() => setDraftReview(null)}
         />
@@ -1235,6 +1453,9 @@ function TailoringReviewModal({
   renderExportPdf,
   onRenderExportPdfChange,
   onExport,
+  onOpenAts,
+  atsNote,
+  onAtsNoteChange,
   onRegenerate,
   onClose
 }) {
@@ -1426,6 +1647,12 @@ function TailoringReviewModal({
 
                 {handoff && (
                   <div className="tailoring-export-result">
+                    {!handoff.quality_passed && (
+                      <label className="ats-quality-gate">
+                        <span>Quality review note</span>
+                        <textarea value={atsNote} onChange={(event) => onAtsNoteChange(event.target.value)} placeholder="Review the failed checks and record why this export is still appropriate to use." maxLength={1000} />
+                      </label>
+                    )}
                     <div className="tailoring-download-actions">
                       {handoff.docx_ready && (
                         <a className="icon-button secondary" href={`${API_BASE}${handoff.docx_download_path}`} download>
@@ -1440,10 +1667,10 @@ function TailoringReviewModal({
                         </a>
                       )}
                       {loopItem.job_url && (
-                        <a className="icon-button ghost" href={loopItem.job_url} target="_blank" rel="noreferrer">
-                          <ExternalLink size={16} />
-                          <span>Open application</span>
-                        </a>
+                        <button className="icon-button ghost" onClick={onOpenAts} disabled={Boolean(busy) || (!handoff.quality_passed && atsNote.trim().length < 3)}>
+                          <ShieldCheck size={16} />
+                          <span>{loopItem.ats_assist ? "Reopen ATS assist" : "Open with ATS assist"}</span>
+                        </button>
                       )}
                     </div>
                     <div className="tailoring-export-path" title={handoff.packet_folder_path || handoff.prepared_resume_docx_path}>

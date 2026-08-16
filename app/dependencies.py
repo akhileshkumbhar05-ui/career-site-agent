@@ -83,6 +83,7 @@ def get_application_loop_service() -> ApplicationLoopService:
     return ApplicationLoopService(
         matcher=get_llm_match_service(),
         tailoring_review=get_tailoring_review_service(),
+        autofill_autopilot=get_autofill_autopilot_service(),
     )
 
 

@@ -295,6 +295,8 @@ not configured, the confirmed row remains in the local tracker and the response 
 
 ### 7. ATS Apply Assist Loop
 
+Implementation status: shipped as an approved-export handoff with guarded prefill and an explicit human outcome gate.
+
 User payoff:
 - Open the ATS, prefill safe fields, surface unknown questions, and keep final submit manual.
 
@@ -307,6 +309,22 @@ Acceptance criteria:
 - Never click final submit.
 - Show unknown questions as a review checklist.
 - Record portal failures as a technical issue proposal for Sheets.
+
+Implemented behavior:
+- ATS Apply Assist can be armed only from an approved application-loop item with an existing DOCX and apply plan. PDF is preferred when available; file upload remains manual.
+- The Batch Inbox opens the canonical application URL after arming one correlated Third Eye task. The extension fills only safe text, select, and radio fields without overwriting existing values.
+- Sensitive fields are always skipped. Unknown questions, manual uploads, manual-review answers, and protected fields return to the inbox as a review checklist.
+- The extension result automatically updates filled, manual, and protected counts on the application-loop item. Reopening the status does not spend a model call.
+- The interface keeps resume upload, sensitive answers, final review, and final submit behind a visible human hard stop. No code path clicks submit.
+- A portal-failure outcome keeps the item at `ats_opened` and prepares the exact controlled Sheets status `Not Yet Applied Due to Technical Issue`; it never marks the job Applied.
+- `submitted_confirmed` still requires a human actor, a written note, and the explicit manual-submission flag. That command prepares an `Applied` row for the separate Sheets logging loop but does not write it.
+- Regenerating the approved export invalidates the prior ATS handoff so stale resume and apply-plan paths cannot be reused silently.
+
+Endpoints:
+- `POST /application-loop/items/{loop_id}/ats-assist/arm`
+- `GET /application-loop/items/{loop_id}/ats-assist`
+- `POST /application-loop/items/{loop_id}/ats-assist/outcome`
+- `POST /autofill/autopilot/result` records the extension result and synchronizes its correlated application-loop item.
 
 Likely files:
 - `app/services/ats_autofill_service.py`

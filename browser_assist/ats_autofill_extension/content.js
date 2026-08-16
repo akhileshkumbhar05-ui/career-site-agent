@@ -380,10 +380,14 @@
 
     document.documentElement.appendChild(panel);
     loadTailoringDefaults(panel, (jd && jd.role) || "");
-    if (result.autopilot?.enabled && fillable.length) {
+    if (result.autopilot?.enabled) {
       const filled = applyWatcherSuggestions(fillable, false);
       const status = panel.querySelector('[data-cs="fill-status"]');
-      if (status) status.textContent = `Apply assistant filled ${filled} safe field${filled === 1 ? "" : "s"}. Review before submitting.`;
+      if (status) {
+        status.textContent = filled
+          ? `Apply assistant filled ${filled} safe field${filled === 1 ? "" : "s"}. Review before submitting.`
+          : "Apply assistant found no safe fields to fill. Review the form manually.";
+      }
       sendRuntimeMessage({
         action: "CAREERSITE_AUTOPILOT_RESULT",
         payload: {
@@ -394,11 +398,13 @@
           fillable_count: fillable.length,
           manual_count: Number(result.manual_count || 0),
           skipped_count: Number(result.sensitive_count || 0),
-          results: fillable.slice(0, 30).map((item) => ({
+          results: suggestions.slice(0, 60).map((item) => ({
             field_id: item.field_id,
             label: item.label,
             action: item.action,
             source: item.source,
+            reason: item.reason,
+            sensitive: Boolean(item.sensitive),
           })),
         },
       });

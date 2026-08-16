@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 
 from app.dependencies import (
+    get_application_loop_service,
     get_ats_autofill_service,
     get_autofill_autopilot_service,
     get_autofill_context_service,
     get_page_watcher_service,
     get_tailoring_review_service,
 )
+from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
 from app.schemas.ats_autofill import (
     AutofillAutopilotArmRequest,
     AutofillAutopilotArmResponse,
@@ -108,8 +110,15 @@ def get_autofill_autopilot_context(
 def record_autofill_autopilot_result(
     payload: AutofillAutopilotResultRequest,
     service: AutofillAutopilotService = Depends(get_autofill_autopilot_service),
+    loop_service: ApplicationLoopService = Depends(get_application_loop_service),
 ) -> AutofillAutopilotResultResponse:
-    return service.record_result(payload)
+    result = service.record_result(payload)
+    if result.recorded and result.loop_id:
+        try:
+            loop_service.sync_ats_assist(result.loop_id)
+        except (KeyError, InvalidApplicationLoopTransition, RuntimeError):
+            pass
+    return result
 
 
 @router.post("/observe", response_model=WatcherObserveResponse)

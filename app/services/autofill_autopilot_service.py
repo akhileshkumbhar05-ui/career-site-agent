@@ -48,6 +48,7 @@ class AutofillAutopilotService:
         expires_at = now + timedelta(minutes=payload.expires_minutes)
         task = {
             "task_id": f"autofill_{uuid.uuid4().hex[:12]}",
+            "loop_id": payload.loop_id,
             "status": "armed",
             "target_url": target_url,
             "apply_plan": apply_plan,
@@ -69,6 +70,7 @@ class AutofillAutopilotService:
         return AutofillAutopilotArmResponse(
             armed=True,
             task_id=task["task_id"],
+            loop_id=payload.loop_id,
             target_url=target_url,
             apply_plan_path=payload.apply_plan_path,
             expires_at=expires_at.isoformat(),
@@ -102,6 +104,7 @@ class AutofillAutopilotService:
         return AutofillAutopilotContextResponse(
             enabled=True,
             task_id=str(task.get("task_id") or ""),
+            loop_id=str(task.get("loop_id") or ""),
             overwrite=bool(task.get("overwrite")),
             apply_plan=task.get("apply_plan") or {},
             apply_plan_path=str(task.get("apply_plan_path") or ""),
@@ -117,7 +120,17 @@ class AutofillAutopilotService:
         task["last_result"] = payload.model_dump()
         task["last_result_at"] = datetime.now(UTC).isoformat()
         self._write_state(task)
-        return AutofillAutopilotResultResponse(recorded=True, message="Autofill result recorded.")
+        return AutofillAutopilotResultResponse(
+            recorded=True,
+            loop_id=str(task.get("loop_id") or ""),
+            message="Autofill result recorded.",
+        )
+
+    def get_task(self, task_id: str = "") -> dict[str, Any]:
+        task = self._read_state()
+        if not task or (task_id and task_id != task.get("task_id")):
+            return {}
+        return task
 
     def clear(self) -> None:
         if self.state_path.exists():
