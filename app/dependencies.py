@@ -34,6 +34,7 @@ from app.services.tailoring_review_service import TailoringReviewService
 from app.services.tracker_service import TrackerService
 from app.services.pipeline_service import PipelineService
 from app.services.third_eye_intake_service import ThirdEyeIntakeService
+from app.services.third_eye_closeout_service import ThirdEyeCloseoutService
 
 
 @lru_cache
@@ -101,6 +102,16 @@ def get_third_eye_intake_service() -> ThirdEyeIntakeService:
     return ThirdEyeIntakeService(
         loop_service=get_application_loop_service(),
         sprint_service=get_application_sprint_service(),
+    )
+
+
+@lru_cache
+def get_third_eye_closeout_service() -> ThirdEyeCloseoutService:
+    return ThirdEyeCloseoutService(
+        loop_service=get_application_loop_service(),
+        sprint_service=get_application_sprint_service(),
+        tracker=get_tracker_service(),
+        autofill_autopilot=get_autofill_autopilot_service(),
     )
 
 

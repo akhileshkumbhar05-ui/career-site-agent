@@ -245,6 +245,19 @@
     const jd = result.jd;
     const capturedPageText = extractPageText();
     const discoverySource = inferDiscoverySource(window.location.href);
+    const closeoutAvailable = result.page_type === "confirmation" || (
+      ["application_form", "both"].includes(result.page_type) && result.autopilot?.enabled
+    );
+    if (closeoutAvailable) {
+      const closeoutAutomatic = result.page_type === "confirmation";
+      html += `
+        <div data-cs="closeout" style="padding:10px 0;border-top:1px solid rgba(255,255,255,.12);border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:8px;">
+          <strong style="display:block;font-size:13px;">${closeoutAutomatic ? "Close out this application" : "Application outcome"}</strong>
+          ${closeoutAutomatic ? "" : `<button data-cs="closeout-toggle" style="margin-top:7px;width:100%;border:1px solid #666;border-radius:6px;padding:7px;background:#303030;color:#fff;font-weight:700;cursor:pointer;">Review application outcome</button>`}
+          <div data-cs="closeout-status" style="margin-top:5px;color:#b3b3b3;font-size:11px;">${closeoutAutomatic ? "Matching this confirmation to the open ATS job..." : ""}</div>
+          <div data-cs="closeout-review"${closeoutAutomatic ? "" : " hidden"}></div>
+        </div>`;
+    }
     if (jd && (jd.role || jd.company)) {
       const reqs = (jd.key_requirements || []).slice(0, 4)
         .map((req) => `<li style="margin:0 0 2px;">${watcherEscape(req)}</li>`).join("");
@@ -441,6 +454,17 @@
 
     document.documentElement.appendChild(panel);
     loadTailoringDefaults(panel, (jd && jd.role) || "");
+    if (result.page_type === "confirmation") {
+      reviewThirdEyeCloseout(panel, result);
+    }
+    panel.querySelector('[data-cs="closeout-toggle"]')?.addEventListener("click", async () => {
+      const review = panel.querySelector('[data-cs="closeout-review"]');
+      const toggle = panel.querySelector('[data-cs="closeout-toggle"]');
+      if (!review || !toggle) return;
+      review.hidden = !review.hidden;
+      toggle.textContent = review.hidden ? "Review application outcome" : "Hide application outcome";
+      if (!review.hidden && !review.hasChildNodes()) await reviewThirdEyeCloseout(panel, result);
+    });
     if (result.autopilot?.enabled) {
       const filled = applyWatcherSuggestions(fillable, false);
       const status = panel.querySelector('[data-cs="fill-status"]');
@@ -470,6 +494,242 @@
         },
       });
     }
+  }
+
+  async function reviewThirdEyeCloseout(panel, watcherResult) {
+    const status = panel.querySelector('[data-cs="closeout-status"]');
+    const response = await sendRuntimeMessage({
+      action: "CAREERSITE_CLOSEOUT_REVIEW",
+      payload: {
+        loop_id: watcherResult.autopilot?.loop_id || "",
+        task_id: watcherResult.autopilot?.task_id || "",
+        url: window.location.href,
+        page_title: document.title || "",
+        page_text: extractPageText(),
+      },
+    });
+    if (response?.error || !response?.matched) {
+      if (status) {
+        status.style.color = "#f5c518";
+        status.textContent = response?.error
+          ? `Could not prepare closeout: ${friendlyRuntimeError(response.error)}`
+          : response?.reason || "Could not match this confirmation to an open application.";
+      }
+      return;
+    }
+    if (status) {
+      status.style.color = "#b7e4c7";
+      status.textContent = `${response.loop_item.company} - ${response.loop_item.role}. No additional Claude call.`;
+    }
+    renderThirdEyeCloseoutReview(panel, response);
+  }
+
+  function renderThirdEyeCloseoutReview(panel, review) {
+    const container = panel.querySelector('[data-cs="closeout-review"]');
+    if (!container || !review?.loop_item) return;
+    const item = review.loop_item;
+    const alreadySheetLogged = ["sheet_logged", "recruiter_note_ready", "outreach_done"].includes(item.state);
+    const submittedRow = review.submitted_sheet_row || {};
+    const source = submittedRow["Job Posted On"] || item.source || "Unknown";
+    const appliedUsing = submittedRow["Applied Using"] || "Company Website";
+    container.innerHTML = `
+      <div style="margin-top:9px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <label style="display:flex;align-items:center;gap:6px;padding:7px;border:1px solid #555;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">
+            <input data-cs-closeout-outcome="submitted_confirmed" name="careersite-closeout-outcome" type="radio" value="submitted_confirmed" checked> Submitted
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;padding:7px;border:1px solid #555;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">
+            <input data-cs-closeout-outcome="technical_issue" name="careersite-closeout-outcome" type="radio" value="technical_issue"> Portal issue
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;">
+          <label style="display:block;color:#b3b3b3;font-size:11px;">Salary quoted
+            <input data-cs-closeout="salary" value="${watcherEscape(submittedRow["Salary Quoted while Applying"] || "N/A")}" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+          </label>
+          <label style="display:block;color:#b3b3b3;font-size:11px;">Discovery source
+            <input data-cs-closeout="source" value="${watcherEscape(source)}" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+          </label>
+        </div>
+        <label style="display:block;margin-top:7px;color:#b3b3b3;font-size:11px;">Applied using
+          <select data-cs-closeout="applied_using" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+            ${closeoutAppliedUsingOptions(appliedUsing)}
+          </select>
+        </label>
+        <div style="margin-top:8px;color:#b3b3b3;font-size:11px;font-weight:700;">Canonical Sheets row</div>
+        <div data-cs="closeout-row" style="margin-top:4px;padding:7px 0;border-top:1px solid rgba(255,255,255,.1);border-bottom:1px solid rgba(255,255,255,.1);"></div>
+        <label data-cs="closeout-human-row" style="display:flex;align-items:flex-start;gap:6px;margin-top:8px;color:#fff;font-size:11px;font-weight:700;">
+          <input data-cs-closeout="human_confirmed" type="checkbox">
+          <span>I manually submitted this application and reviewed the confirmation.</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:6px;margin-top:8px;color:#e0e0e0;font-size:11px;">
+          <input data-cs-closeout="log_to_sheets" type="checkbox" ${review.sheets_configured ? "checked" : "disabled"}>
+          <span>${review.sheets_configured ? "Log this canonical row to Google Sheets" : "Google Sheets writer is not configured"}</span>
+        </label>
+        <label style="display:block;margin-top:8px;color:#b3b3b3;font-size:11px;">Confirmation note
+          <textarea data-cs-closeout="note" rows="3" maxlength="1000" style="display:block;width:100%;margin-top:3px;padding:6px;resize:vertical;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;font:11px/1.4 Arial,sans-serif;box-sizing:border-box;">I reviewed the ATS confirmation page after submitting manually.</textarea>
+        </label>
+        <div data-cs="closeout-guard" style="margin-top:6px;color:#f5c518;font-size:10px;"></div>
+        <button data-cs="closeout-commit" disabled style="margin-top:8px;width:100%;border:0;border-radius:6px;padding:8px;background:#e50914;color:#fff;font-weight:700;cursor:pointer;">Confirm submission and log</button>
+        <div data-cs="closeout-result" style="margin-top:6px;color:#b3b3b3;font-size:11px;"></div>
+      </div>`;
+    panel.__careerSiteCloseoutReview = review;
+    panel.__careerSiteCloseoutNotes = {
+      submitted_confirmed: "I reviewed the ATS confirmation page after submitting manually.",
+      technical_issue: "",
+    };
+    panel.dataset.csCloseoutOutcome = "submitted_confirmed";
+
+    container.querySelectorAll("[data-cs-closeout-outcome]").forEach((input) => {
+      input.addEventListener("change", () => switchThirdEyeCloseoutOutcome(panel));
+    });
+    container.querySelectorAll("[data-cs-closeout]").forEach((input) => {
+      input.addEventListener("input", () => updateThirdEyeCloseoutForm(panel));
+      input.addEventListener("change", () => updateThirdEyeCloseoutForm(panel));
+    });
+    container.querySelector('[data-cs="closeout-commit"]')?.addEventListener("click", async () => {
+      await commitThirdEyeCloseout(panel);
+    });
+    if (alreadySheetLogged) {
+      const result = container.querySelector('[data-cs="closeout-result"]');
+      if (result) {
+        result.style.color = "#b7e4c7";
+        result.textContent = "This submitted application is already logged to Sheets.";
+      }
+    }
+    panel.dataset.csCloseoutLocked = alreadySheetLogged ? "true" : "false";
+    updateThirdEyeCloseoutForm(panel);
+  }
+
+  function switchThirdEyeCloseoutOutcome(panel) {
+    const note = panel.querySelector('[data-cs-closeout="note"]');
+    const notes = panel.__careerSiteCloseoutNotes || {};
+    const previous = panel.dataset.csCloseoutOutcome || "submitted_confirmed";
+    if (note) notes[previous] = note.value;
+    const next = panel.querySelector("[data-cs-closeout-outcome]:checked")?.value || "submitted_confirmed";
+    panel.dataset.csCloseoutOutcome = next;
+    panel.__careerSiteCloseoutNotes = notes;
+    if (note) note.value = notes[next] || "";
+    updateThirdEyeCloseoutForm(panel);
+  }
+
+  function closeoutAppliedUsingOptions(selected) {
+    return ["LinkedIn", "Indeed", "Company Website", "ZipRecruiter", "Jobright.ai"]
+      .map((value) => `<option value="${value}"${value === selected ? " selected" : ""}>${value}</option>`)
+      .join("");
+  }
+
+  function currentThirdEyeCloseoutRow(panel) {
+    const review = panel.__careerSiteCloseoutReview || {};
+    const outcome = panel.querySelector("[data-cs-closeout-outcome]:checked")?.value || "submitted_confirmed";
+    const sourceRow = outcome === "technical_issue"
+      ? review.technical_issue_sheet_row || {}
+      : review.submitted_sheet_row || {};
+    return {
+      ...sourceRow,
+      "Salary Quoted while Applying": panel.querySelector('[data-cs-closeout="salary"]')?.value.trim() || "N/A",
+      "Job Posted On": panel.querySelector('[data-cs-closeout="source"]')?.value.trim() || "Unknown",
+      "Applied Using": panel.querySelector('[data-cs-closeout="applied_using"]')?.value || "Company Website",
+    };
+  }
+
+  function updateThirdEyeCloseoutForm(panel) {
+    const row = currentThirdEyeCloseoutRow(panel);
+    const outcome = panel.querySelector("[data-cs-closeout-outcome]:checked")?.value || "submitted_confirmed";
+    const humanRow = panel.querySelector('[data-cs="closeout-human-row"]');
+    const humanConfirmed = panel.querySelector('[data-cs-closeout="human_confirmed"]');
+    const note = panel.querySelector('[data-cs-closeout="note"]');
+    const logToSheets = panel.querySelector('[data-cs-closeout="log_to_sheets"]');
+    const button = panel.querySelector('[data-cs="closeout-commit"]');
+    const guard = panel.querySelector('[data-cs="closeout-guard"]');
+    const rowContainer = panel.querySelector('[data-cs="closeout-row"]');
+    if (humanRow) humanRow.style.display = outcome === "submitted_confirmed" ? "flex" : "none";
+    if (note && panel.__careerSiteCloseoutNotes) panel.__careerSiteCloseoutNotes[outcome] = note.value;
+    if (rowContainer) rowContainer.innerHTML = closeoutSheetRowHtml(row);
+
+    const confirmed = outcome === "technical_issue" || Boolean(humanConfirmed?.checked);
+    const noteReady = (note?.value.trim().length || 0) >= 3;
+    const locked = panel.dataset.csCloseoutLocked === "true";
+    if (button) {
+      button.textContent = outcome === "technical_issue"
+        ? (logToSheets?.checked ? "Record portal issue and log" : "Record portal issue")
+        : (logToSheets?.checked ? "Confirm submission and log" : "Confirm submission");
+      button.disabled = locked || !confirmed || !noteReady;
+    }
+    if (guard) {
+      guard.textContent = outcome === "submitted_confirmed" && !humanConfirmed?.checked
+        ? "Status remains unchanged until you confirm manual submission."
+        : outcome === "technical_issue"
+          ? "This records Not Yet Applied Due to Technical Issue, never Applied."
+          : "Ready for your confirmed closeout.";
+    }
+  }
+
+  function closeoutSheetRowHtml(row) {
+    const columns = [
+      "Date", "Company Applied", "Role", "Salary Quoted while Applying",
+      "Job Posted On", "Applied Using", "Status", "Link",
+    ];
+    return columns.map((column) => `
+      <div style="display:grid;grid-template-columns:116px minmax(0,1fr);gap:7px;padding:2px 0;font-size:10px;">
+        <span style="color:#8f8f8f;">${watcherEscape(column)}</span>
+        <span style="color:#e6e6e6;overflow-wrap:anywhere;">${watcherEscape(row[column] || "")}</span>
+      </div>`).join("");
+  }
+
+  async function commitThirdEyeCloseout(panel) {
+    const review = panel.__careerSiteCloseoutReview || {};
+    const row = currentThirdEyeCloseoutRow(panel);
+    const outcome = panel.querySelector("[data-cs-closeout-outcome]:checked")?.value || "submitted_confirmed";
+    const button = panel.querySelector('[data-cs="closeout-commit"]');
+    const resultContainer = panel.querySelector('[data-cs="closeout-result"]');
+    if (button) button.disabled = true;
+    if (resultContainer) {
+      resultContainer.style.color = "#b3b3b3";
+      resultContainer.textContent = "Recording your confirmed outcome...";
+    }
+    const response = await sendRuntimeMessage({
+      action: "CAREERSITE_CLOSEOUT_COMMIT",
+      payload: {
+        loop_id: review.loop_item?.loop_id || "",
+        outcome,
+        note: panel.querySelector('[data-cs-closeout="note"]')?.value.trim() || "",
+        human_confirmed_submission: Boolean(panel.querySelector('[data-cs-closeout="human_confirmed"]')?.checked),
+        log_to_sheets: Boolean(panel.querySelector('[data-cs-closeout="log_to_sheets"]')?.checked),
+        salary_quoted: row["Salary Quoted while Applying"] || "N/A",
+        source: row["Job Posted On"] || "Unknown",
+        applied_using: row["Applied Using"] || "Company Website",
+      },
+    });
+    if (response?.error) {
+      if (resultContainer) {
+        resultContainer.style.color = "#f5c518";
+        resultContainer.textContent = `Closeout failed: ${friendlyRuntimeError(response.error)}`;
+      }
+      if (button) button.disabled = false;
+      return;
+    }
+
+    const sheetsFailed = response.sheet_result && !response.sheet_result.success;
+    if (resultContainer) {
+      resultContainer.style.color = sheetsFailed ? "#f5c518" : "#b7e4c7";
+      resultContainer.innerHTML = `${watcherEscape(response.message)} No additional Claude call.${closeoutProgressHtml(response.progress)}`;
+    }
+    if (button) {
+      button.textContent = sheetsFailed ? "Retry Sheets logging" : "Closeout recorded";
+      button.disabled = !sheetsFailed;
+    }
+    if (!sheetsFailed) panel.dataset.csCloseoutLocked = "true";
+  }
+
+  function closeoutProgressHtml(progress) {
+    if (!progress) return "";
+    if (progress.next_company) {
+      return `<div style="margin-top:5px;color:#fff;"><strong>Next:</strong> ${watcherEscape(progress.next_company)} - ${watcherEscape(progress.next_role)} &middot; ${watcherEscape(progress.next_action)}</div>`;
+    }
+    if (progress.outreach_unlocked) {
+      return `<div style="margin-top:5px;color:#fff;"><strong>Next:</strong> Recruiter outreach batch</div>`;
+    }
+    return "";
   }
 
   function inferDiscoverySource(url) {

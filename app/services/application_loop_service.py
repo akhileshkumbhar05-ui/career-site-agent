@@ -1360,6 +1360,13 @@ class ApplicationLoopService:
             message=message,
         )
 
+    def propose_sheet_row(self, loop_id: str, *, status: str) -> dict[str, str]:
+        return self._sheet_row_proposal(
+            self.get_item(loop_id),
+            status=status,
+            occurred_at=self._now(),
+        )
+
     def prepare_recruiter_outreach_batch(
         self,
         payload: ApplicationLoopOutreachBatchRequest,

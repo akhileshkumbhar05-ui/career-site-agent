@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from app.dependencies import get_application_loop_service, get_third_eye_intake_service
+from app.dependencies import (
+    get_application_loop_service,
+    get_third_eye_closeout_service,
+    get_third_eye_intake_service,
+)
 from app.schemas.application_loop import (
     ApplicationLoopATSArmRequest,
     ApplicationLoopATSAssistResponse,
@@ -35,7 +39,14 @@ from app.schemas.application_loop import (
     ThirdEyeIntakeReviewResponse,
 )
 from app.schemas.tailoring_review import TailoringPreviewRenderResponse, TailoringReviewSelection
+from app.schemas.third_eye_closeout import (
+    ThirdEyeCloseoutRequest,
+    ThirdEyeCloseoutResponse,
+    ThirdEyeCloseoutReviewRequest,
+    ThirdEyeCloseoutReviewResponse,
+)
 from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
+from app.services.third_eye_closeout_service import ThirdEyeCloseoutService
 from app.services.third_eye_intake_service import ThirdEyeIntakeService
 
 
@@ -67,6 +78,27 @@ def commit_third_eye_intake(
         return service.commit(payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/third-eye-closeout/review", response_model=ThirdEyeCloseoutReviewResponse)
+def review_third_eye_closeout(
+    payload: ThirdEyeCloseoutReviewRequest,
+    service: ThirdEyeCloseoutService = Depends(get_third_eye_closeout_service),
+) -> ThirdEyeCloseoutReviewResponse:
+    return service.review(payload)
+
+
+@router.post("/third-eye-closeout", response_model=ThirdEyeCloseoutResponse)
+def commit_third_eye_closeout(
+    payload: ThirdEyeCloseoutRequest,
+    service: ThirdEyeCloseoutService = Depends(get_third_eye_closeout_service),
+) -> ThirdEyeCloseoutResponse:
+    try:
+        return service.commit(payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/items", response_model=list[ApplicationLoopItem])

@@ -22,6 +22,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.action === "CAREERSITE_CLOSEOUT_REVIEW") {
+    postLocalJson("/application-loop/third-eye-closeout/review", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (message?.action === "CAREERSITE_CLOSEOUT_COMMIT") {
+    postLocalJson("/application-loop/third-eye-closeout", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
   if (message?.action === "CAREERSITE_TAILOR_PREVIEW") {
     postLocalJson("/autofill/tailoring/preview", message.payload || {})
       .then(sendResponse)
