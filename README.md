@@ -125,5 +125,8 @@ Daily production process:
 Agent architecture:
 - `docs/agent_architecture.md`
 
+Loop-engineering mini-project map:
+- `docs/loop_engineering_mini_projects.md`
+
 ## Project status
 Ongoing. This scaffold is intentionally modular so each service can be upgraded without changing the full architecture.
