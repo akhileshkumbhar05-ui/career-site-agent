@@ -101,6 +101,8 @@ Manual application loop endpoints:
 - `POST /copilot/analyze-jd`
 - `POST /copilot/prepare-log`
 - `POST /copilot/confirm-log`
+- `POST /application-loop/batches`
+- `GET /application-loop/items`
 
 Agent CLI:
 ```bash

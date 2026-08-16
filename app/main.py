@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, autofill, contacts, copilot, email, health, jobs, llm, pipeline, queue, resume, tracker, webapp
+from app.api import application_loop, agents, autofill, contacts, copilot, email, health, jobs, llm, pipeline, queue, resume, tracker, webapp
 from app.config import settings
 from app.db import init_db
 
@@ -38,3 +38,4 @@ app.include_router(autofill.router, prefix="/autofill", tags=["autofill"])
 app.include_router(agents.router, prefix="/agents", tags=["agents"])
 app.include_router(webapp.router, prefix="/webapp", tags=["webapp"])
 app.include_router(copilot.router, prefix="/copilot", tags=["copilot"])
+app.include_router(application_loop.router, prefix="/application-loop", tags=["application-loop"])

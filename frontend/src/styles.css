@@ -611,6 +611,332 @@ input[type="range"]::-moz-range-thumb {
   grid-column: 1 / -1;
 }
 
+/* ---------- Batch inbox workspace ---------- */
+.batch-workspace {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(600px, 1fr) minmax(360px, 0.62fr);
+  min-width: 0;
+}
+
+.batch-compose,
+.batch-inbox {
+  min-width: 0;
+}
+
+.batch-inbox {
+  align-self: start;
+  position: sticky;
+  top: 1.1rem;
+}
+
+.batch-section-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0 0 0.7rem;
+}
+
+.batch-section-header h2 {
+  font-size: 1.08rem;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.batch-section-header > div > span,
+.batch-submit-bar > span {
+  color: var(--muted-2);
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  margin-top: 0.22rem;
+  text-transform: uppercase;
+}
+
+.batch-header-actions,
+.batch-entry-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.compact-icon {
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  width: 36px;
+}
+
+.batch-bulk-input {
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.85rem 0;
+}
+
+.batch-bulk-input label,
+.batch-entry-fields label,
+.batch-jd-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.batch-bulk-input label > span,
+.batch-entry-fields label > span,
+.batch-jd-field > span {
+  color: var(--muted-2);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.batch-bulk-input textarea,
+.batch-entry-fields input,
+.batch-entry-fields select,
+.batch-jd-field textarea {
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  outline: 0;
+  padding: 0.6rem 0.7rem;
+  transition: background 140ms ease, border-color 140ms ease;
+  width: 100%;
+}
+
+.batch-bulk-input textarea:focus,
+.batch-entry-fields input:focus,
+.batch-entry-fields select:focus,
+.batch-jd-field textarea:focus {
+  background: #3a3a3a;
+  border-color: var(--line-strong);
+}
+
+.batch-bulk-input textarea {
+  line-height: 1.4;
+  min-height: 74px;
+  resize: vertical;
+}
+
+.batch-entry-fields input,
+.batch-entry-fields select {
+  min-height: 42px;
+}
+
+.batch-entry-fields select option {
+  background: #1f1f1f;
+  color: #fff;
+}
+
+.batch-entry-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 0;
+}
+
+.batch-entry {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.batch-entry:focus-within {
+  background: var(--panel-hover);
+  border-color: var(--line-strong);
+}
+
+.batch-entry.outcome-imported {
+  border-color: rgba(70, 211, 105, 0.45);
+}
+
+.batch-entry.outcome-duplicate {
+  border-color: rgba(245, 197, 24, 0.45);
+}
+
+.batch-entry.outcome-invalid {
+  border-color: rgba(229, 9, 20, 0.55);
+}
+
+.batch-entry-header,
+.batch-entry-number {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+  justify-content: space-between;
+}
+
+.batch-entry-number strong {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.batch-entry-fields {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 180px;
+  margin-top: 0.65rem;
+}
+
+.batch-url-field {
+  grid-column: 1 / -1;
+}
+
+.batch-jd-field {
+  margin-top: 0.65rem;
+}
+
+.batch-jd-field textarea {
+  line-height: 1.5;
+  min-height: 210px;
+  resize: vertical;
+}
+
+.batch-outcome-reason {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  margin-top: 0.55rem;
+}
+
+.batch-submit-bar {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem;
+}
+
+.batch-submit-bar > span {
+  margin: 0;
+}
+
+.batch-inbox-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.batch-summary {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0.8rem 0;
+}
+
+.batch-stat {
+  border-left: 2px solid var(--line-strong);
+  min-width: 0;
+  padding-left: 0.5rem;
+}
+
+.batch-stat.good {
+  border-color: var(--green);
+}
+
+.batch-stat.warn {
+  border-color: var(--amber);
+}
+
+.batch-stat.bad {
+  border-color: var(--red);
+}
+
+.batch-stat span {
+  color: var(--muted-2);
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.batch-stat strong {
+  display: block;
+  font-size: 1.2rem;
+  margin-top: 0.18rem;
+}
+
+.batch-inbox-item {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+}
+
+.batch-inbox-title {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.batch-inbox-title h3 {
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.batch-inbox-title p {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 0.2rem;
+}
+
+.batch-inbox-meta {
+  color: var(--muted-2);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  gap: 0.4rem 0.8rem;
+}
+
+.batch-job-link {
+  align-items: center;
+  color: var(--blue);
+  display: flex;
+  font-size: 0.76rem;
+  gap: 0.4rem;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.batch-job-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-job-link svg {
+  flex: 0 0 auto;
+}
+
+.batch-empty {
+  align-items: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  min-height: 170px;
+}
+
 /* ---------- Content grid (list + detail) ---------- */
 .content-grid {
   display: grid;
@@ -1099,6 +1425,7 @@ th {
   }
 
   .manual-grid,
+  .batch-workspace,
   .content-grid,
   .diagnostic-grid {
     grid-template-columns: 1fr;
@@ -1106,6 +1433,14 @@ th {
 
   .detail-panel {
     position: static;
+  }
+
+  .batch-inbox {
+    position: static;
+  }
+
+  .batch-inbox-list {
+    max-height: none;
   }
 
   .toolbar {
@@ -1116,18 +1451,52 @@ th {
   .job-proof-row,
   .detail-proof-panel,
   .manual-fields,
+  .batch-entry-fields,
   .sheet-preview {
     grid-template-columns: 1fr 1fr;
   }
 }
 
 @media (max-width: 720px) {
+  .workspace {
+    padding: 1rem;
+  }
+
+  .topbar,
+  .batch-section-header,
+  .batch-submit-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-header-actions {
+    width: 100%;
+  }
+
+  .batch-header-actions button {
+    flex: 1;
+  }
+
+  .batch-bulk-input {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
   .manual-fields,
+  .batch-entry-fields,
   .sheet-preview,
   .job-facts,
   .detail-metrics,
   .detail-source-panel,
   .insight-grid {
     grid-template-columns: 1fr;
+  }
+
+  .batch-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .batch-url-field {
+    grid-column: auto;
   }
 }

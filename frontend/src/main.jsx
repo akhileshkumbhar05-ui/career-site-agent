@@ -5,15 +5,22 @@ import {
   Bot,
   BriefcaseBusiness,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   ExternalLink,
   Eye,
   FileText,
+  Inbox,
+  Link2,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   ShieldAlert,
   Sparkles,
+  Trash2,
+  Upload,
   XCircle
 } from "lucide-react";
 import "./styles.css";
@@ -40,13 +47,24 @@ function App() {
   const [prepared, setPrepared] = React.useState(null);
 
   const activeJob = data?.jobs?.find((row) => row.key === selectedKey) || data?.jobs?.[0] || null;
-  const feedTitle = feed === "manual" ? "Manual JD Review" : feed === "fresh24" ? "Fresh 24h Jobs" : feed === "applied" ? "Already Applied" : "Recommended Jobs";
+  const standaloneWorkspace = feed === "manual" || feed === "batch";
+  const feedTitle =
+    feed === "manual"
+      ? "Manual JD Review"
+      : feed === "batch"
+        ? "Ten-Job Batch Inbox"
+        : feed === "fresh24"
+          ? "Fresh 24h Jobs"
+          : feed === "applied"
+            ? "Already Applied"
+            : "Recommended Jobs";
 
   const loadDashboard = React.useCallback(async () => {
-    if (feed === "manual") {
+    if (feed === "manual" || feed === "batch") {
       setLoading(false);
       setData(null);
       setSelectedKey("");
+      setError("");
       return;
     }
     setLoading(true);
@@ -158,6 +176,7 @@ function App() {
         </div>
         <nav className="nav-stack" aria-label="Job feeds">
           <RailButton active={feed === "manual"} icon={FileText} label="Manual JD" onClick={() => setFeed("manual")} />
+          <RailButton active={feed === "batch"} icon={Inbox} label="Batch Inbox" onClick={() => setFeed("batch")} />
           <RailButton active={feed === "recommended"} icon={BriefcaseBusiness} label="Recommended" onClick={() => setFeed("recommended")} />
           <RailButton active={feed === "fresh24"} icon={Clock3} label="Fresh 24h" onClick={() => setFeed("fresh24")} />
           <RailButton active={feed === "applied"} icon={CheckCircle2} label="Already Applied" onClick={() => setFeed("applied")} />
@@ -174,19 +193,19 @@ function App() {
             <h1>{feedTitle}</h1>
             <div className="topline">
               <StatusPill tone={error ? "bad" : "good"} icon={error ? XCircle : CheckCircle2} text={error ? "Needs attention" : "Ready"} />
-              <StatusPill tone="neutral" icon={Bot} text={feed === "manual" ? "Paste JD analysis" : filters.useLlm ? "LLM scoring" : "Deterministic scoring"} />
-              <StatusPill tone="neutral" icon={Eye} text={feed === "manual" ? "Human confirmation" : "Browser watcher fills"} />
+              <StatusPill tone="neutral" icon={Bot} text={feed === "manual" ? "Paste JD analysis" : feed === "batch" ? "Deterministic intake" : filters.useLlm ? "LLM scoring" : "Deterministic scoring"} />
+              <StatusPill tone="neutral" icon={Eye} text={standaloneWorkspace ? "Human review" : "Browser watcher fills"} />
               {feed === "recommended" && <StatusPill tone="sponsor" icon={ShieldAlert} text="DOL sponsor source" />}
             </div>
           </div>
           <div className="top-actions">
-            {feed !== "manual" && (
+            {!standaloneWorkspace && (
               <button className="icon-button secondary" onClick={loadDashboard} disabled={loading || Boolean(action)}>
                 {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
                 <span>Reload</span>
               </button>
             )}
-            {feed !== "applied" && feed !== "manual" && (
+            {feed !== "applied" && !standaloneWorkspace && (
               <button className="icon-button primary" onClick={refreshJobs} disabled={loading || Boolean(action)}>
                 {action === "refresh" ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
                 <span>{feed === "fresh24" ? "Refresh Fresh Jobs" : "Refresh Jobs"}</span>
@@ -204,6 +223,8 @@ function App() {
 
         {feed === "manual" ? (
           <ManualJDWorkspace />
+        ) : feed === "batch" ? (
+          <BatchInboxWorkspace />
         ) : (
           <>
             <Toolbar feed={feed} filters={filters} setFilters={setFilters} />
@@ -321,6 +342,293 @@ function Toggle({ label, checked, onChange }) {
       <span />
       <strong>{label}</strong>
     </label>
+  );
+}
+
+const BATCH_SOURCES = ["Jobright AI", "LinkedIn", "Referral", "Company Website", "Simplify", "TikTok", "Cognizant", "Unknown"];
+let batchEntrySequence = 0;
+
+function newBatchEntry(overrides = {}) {
+  batchEntrySequence += 1;
+  return {
+    id: `batch-entry-${batchEntrySequence}`,
+    company: "",
+    role: "",
+    job_url: "",
+    jd_text: "",
+    source: "Jobright AI",
+    expanded: false,
+    ...overrides
+  };
+}
+
+function BatchInboxWorkspace() {
+  const [entries, setEntries] = React.useState(() => [newBatchEntry()]);
+  const [bulkLinks, setBulkLinks] = React.useState("");
+  const [inbox, setInbox] = React.useState([]);
+  const [batchResult, setBatchResult] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [error, setError] = React.useState("");
+
+  const loadInbox = React.useCallback(async () => {
+    setBusy((current) => current || "load");
+    try {
+      const items = await apiGet("/application-loop/items?limit=100");
+      setInbox(Array.isArray(items) ? items : []);
+    } catch (err) {
+      setError(err.message || "Could not load the batch inbox.");
+    } finally {
+      setBusy((current) => current === "load" ? "" : current);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadInbox();
+  }, [loadInbox]);
+
+  function updateEntry(id, field, value) {
+    setEntries((current) => current.map((entry) => entry.id === id ? { ...entry, [field]: value } : entry));
+    setBatchResult(null);
+    setMessage("");
+    setError("");
+  }
+
+  function addEntry() {
+    if (entries.length >= 10) return;
+    setEntries((current) => [...current, newBatchEntry()]);
+    setBatchResult(null);
+  }
+
+  function removeEntry(id) {
+    setEntries((current) => current.length === 1 ? [newBatchEntry()] : current.filter((entry) => entry.id !== id));
+    setBatchResult(null);
+  }
+
+  function resetEntries() {
+    setEntries([newBatchEntry()]);
+    setBulkLinks("");
+    setBatchResult(null);
+    setMessage("");
+    setError("");
+  }
+
+  function loadBulkLinks() {
+    const urls = bulkLinks
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter((value) => /^https?:\/\//i.test(value))
+      .slice(0, 10);
+    if (!urls.length) {
+      setError("No complete http or https job links found.");
+      return;
+    }
+    setEntries(urls.map((job_url) => newBatchEntry({ job_url })));
+    setBatchResult(null);
+    setMessage(`${urls.length} link${urls.length === 1 ? "" : "s"} loaded into the batch.`);
+    setError("");
+  }
+
+  async function importBatch() {
+    const submittedEntries = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim());
+    const items = submittedEntries.map(({ company, role, job_url, jd_text, source }) => ({ company, role, job_url, jd_text, source }));
+    if (!submittedEntries.length) {
+      setError("Add at least one job link or job description.");
+      return;
+    }
+
+    setBusy("import");
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost("/application-loop/batches", { items });
+      setBatchResult({
+        ...result,
+        outcomes: result.outcomes.map((outcome) => ({
+          ...outcome,
+          entry_id: submittedEntries[outcome.input_index]?.id || ""
+        }))
+      });
+      setMessage(`${result.summary.imported} imported, ${result.summary.duplicate} duplicate, ${result.summary.invalid} invalid.`);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not import this batch.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
+  const readyCount = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim()).length;
+
+  return (
+    <section className="batch-workspace">
+      <section className="batch-compose" aria-label="New application batch">
+        <div className="batch-section-header">
+          <div>
+            <h2>New batch</h2>
+            <span>{entries.length} of 10 slots</span>
+          </div>
+          <div className="batch-header-actions">
+            <button className="icon-button ghost" title="Clear batch" onClick={resetEntries} disabled={busy === "import"}>
+              <Trash2 size={17} />
+              <span>Clear</span>
+            </button>
+            <button className="icon-button secondary" onClick={addEntry} disabled={entries.length >= 10 || busy === "import"}>
+              <Plus size={17} />
+              <span>Add job</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="batch-bulk-input">
+          <label>
+            <span>Paste links</span>
+            <textarea
+              value={bulkLinks}
+              onChange={(event) => setBulkLinks(event.target.value)}
+              placeholder={"One canonical job URL per line\nhttps://company.example/jobs/data-analyst"}
+            />
+          </label>
+          <button className="icon-button secondary" onClick={loadBulkLinks} disabled={!bulkLinks.trim() || busy === "import"}>
+            <Link2 size={17} />
+            <span>Load links</span>
+          </button>
+        </div>
+
+        <div className="batch-entry-list">
+          {entries.map((entry, index) => {
+            const outcome = outcomes.get(entry.id);
+            return (
+              <article className={`batch-entry ${outcome ? `outcome-${outcome.status}` : ""}`} key={entry.id}>
+                <header className="batch-entry-header">
+                  <div className="batch-entry-number">
+                    <strong>{String(index + 1).padStart(2, "0")}</strong>
+                    {outcome && <span className={`tag ${outcome.status === "imported" ? "good" : outcome.status === "duplicate" ? "warn" : "bad"}`}>{outcome.status}</span>}
+                  </div>
+                  <div className="batch-entry-actions">
+                    <button
+                      className="icon-button ghost compact-icon"
+                      title={entry.expanded ? "Hide job description" : "Add job description"}
+                      onClick={() => updateEntry(entry.id, "expanded", !entry.expanded)}
+                    >
+                      {entry.expanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+                    </button>
+                    <button className="icon-button ghost compact-icon" title="Remove job" onClick={() => removeEntry(entry.id)} disabled={busy === "import"}>
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                </header>
+
+                <div className="batch-entry-fields">
+                  <label>
+                    <span>Company</span>
+                    <input value={entry.company} onChange={(event) => updateEntry(entry.id, "company", event.target.value)} placeholder="Infer from URL or JD" />
+                  </label>
+                  <label>
+                    <span>Role</span>
+                    <input value={entry.role} onChange={(event) => updateEntry(entry.id, "role", event.target.value)} placeholder="Infer from URL or JD" />
+                  </label>
+                  <label>
+                    <span>Discovery source</span>
+                    <select value={entry.source} onChange={(event) => updateEntry(entry.id, "source", event.target.value)}>
+                      {BATCH_SOURCES.map((source) => <option value={source} key={source}>{source}</option>)}
+                    </select>
+                  </label>
+                  <label className="batch-url-field">
+                    <span>Canonical link</span>
+                    <input value={entry.job_url} onChange={(event) => updateEntry(entry.id, "job_url", event.target.value)} placeholder="https://" />
+                  </label>
+                </div>
+
+                {entry.expanded && (
+                  <label className="batch-jd-field">
+                    <span>Job description</span>
+                    <textarea value={entry.jd_text} onChange={(event) => updateEntry(entry.id, "jd_text", event.target.value)} placeholder="Paste the full JD" />
+                  </label>
+                )}
+                {outcome && <p className="batch-outcome-reason">{outcome.reason}</p>}
+              </article>
+            );
+          })}
+        </div>
+
+        {(message || error) && (
+          <div className={`notice ${error ? "notice-bad" : "notice-good"}`}>
+            {error ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+            <span>{error || message}</span>
+          </div>
+        )}
+
+        <div className="batch-submit-bar">
+          <span>{readyCount} ready</span>
+          <button className="icon-button primary" onClick={importBatch} disabled={!readyCount || busy === "import"}>
+            {busy === "import" ? <Loader2 className="spin" size={18} /> : <Upload size={18} />}
+            <span>Import batch</span>
+          </button>
+        </div>
+      </section>
+
+      <aside className="batch-inbox" aria-label="Application loop inbox">
+        <div className="batch-section-header">
+          <div>
+            <h2>Application inbox</h2>
+            <span>{inbox.length} imported</span>
+          </div>
+          <button className="icon-button ghost compact-icon" title="Reload inbox" onClick={loadInbox} disabled={Boolean(busy)}>
+            {busy === "load" ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
+          </button>
+        </div>
+
+        {batchResult && (
+          <div className="batch-summary" aria-label="Latest import summary">
+            <BatchStat label="Requested" value={batchResult.summary.requested} />
+            <BatchStat label="Imported" value={batchResult.summary.imported} tone="good" />
+            <BatchStat label="Duplicate" value={batchResult.summary.duplicate} tone="warn" />
+            <BatchStat label="Invalid" value={batchResult.summary.invalid} tone="bad" />
+          </div>
+        )}
+
+        <div className="batch-inbox-list">
+          {inbox.length ? inbox.map((item) => (
+            <article className="batch-inbox-item" key={item.loop_id}>
+              <div className="batch-inbox-title">
+                <div>
+                  <h3>{item.role}</h3>
+                  <p>{item.company}</p>
+                </div>
+                <span className="tag blue">{item.state.replaceAll("_", " ")}</span>
+              </div>
+              <div className="batch-inbox-meta">
+                <span>{item.source}</span>
+                <span>{formatDateTime(item.created_at)}</span>
+                {item.jd_text && <span>JD saved</span>}
+              </div>
+              {item.job_url && (
+                <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
+                  <ExternalLink size={15} />
+                  <span>{item.job_url}</span>
+                </a>
+              )}
+            </article>
+          )) : (
+            <div className="batch-empty">
+              <Inbox size={26} />
+              <strong>Inbox is empty</strong>
+            </div>
+          )}
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function BatchStat({ label, value, tone = "neutral" }) {
+  return (
+    <div className={`batch-stat ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 

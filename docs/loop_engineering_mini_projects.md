@@ -110,6 +110,8 @@ changes the decision.
 
 ### 2. Ten-Job Batch Inbox
 
+Implementation status: shipped as the persistent intake queue for the daily application loop.
+
 User payoff:
 - Paste or collect 10 Jobright links/JDs and process them as one batch instead of one tab at a time.
 
@@ -121,6 +123,17 @@ Acceptance criteria:
 - Normalize each item into a loop item.
 - Dedupe by canonical link first, then company plus role.
 - Return a batch summary with counts: imported, duplicate, invalid.
+
+Implemented behavior:
+- The React Batch Inbox accepts up to 10 entries, including bulk-pasted links and per-entry raw JDs.
+- Missing company and role labels are inferred from labeled JD text or the canonical URL when possible.
+- Mixed batches are partial-success: invalid and duplicate entries do not block valid imports.
+- Imported loop items and their source JD text persist in SQLite for the later fit and tailoring loops.
+- Importing creates only the `imported` loop state. It does not score, tailor, submit, or write to Google Sheets.
+
+Endpoints:
+- `POST /application-loop/batches`
+- `GET /application-loop/items`
 
 Likely files:
 - `app/api/application_loop.py`

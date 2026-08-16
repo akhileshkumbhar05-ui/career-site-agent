@@ -89,6 +89,67 @@ def init_db() -> None:
             ON job_queue(source_job_id)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_loop_batches (
+                batch_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                requested_count INTEGER NOT NULL,
+                imported_count INTEGER NOT NULL,
+                duplicate_count INTEGER NOT NULL,
+                invalid_count INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_loop_items (
+                loop_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                canonical_job_url TEXT,
+                normalized_company TEXT NOT NULL,
+                normalized_role TEXT NOT NULL,
+                item_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (batch_id) REFERENCES application_loop_batches(batch_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_application_loop_canonical_url
+            ON application_loop_items(canonical_job_url)
+            WHERE canonical_job_url IS NOT NULL AND canonical_job_url <> ''
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_application_loop_company_role
+            ON application_loop_items(normalized_company, normalized_role)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_loop_batch_outcomes (
+                batch_id TEXT NOT NULL,
+                input_index INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                loop_id TEXT,
+                input_json TEXT NOT NULL,
+                PRIMARY KEY (batch_id, input_index),
+                FOREIGN KEY (batch_id) REFERENCES application_loop_batches(batch_id),
+                FOREIGN KEY (loop_id) REFERENCES application_loop_items(loop_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_application_loop_items_created
+            ON application_loop_items(created_at DESC)
+            """
+        )
         conn.commit()
     finally:
         conn.close()
