@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Bot,
   BrainCircuit,
@@ -21,8 +22,11 @@ import {
   Gauge,
   Inbox,
   Link2,
+  ListChecks,
   Loader2,
   Plus,
+  Pause,
+  Play,
   RefreshCw,
   RotateCcw,
   Save,
@@ -31,6 +35,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Table2,
   Timer,
   Trash2,
   TrendingUp,
@@ -679,12 +684,21 @@ function BatchInboxWorkspace() {
   const [outreachConfirmations, setOutreachConfirmations] = React.useState({});
   const [outreachOutcomeNotes, setOutreachOutcomeNotes] = React.useState({});
   const [outreachResult, setOutreachResult] = React.useState(null);
+  const [sprint, setSprint] = React.useState(null);
+  const [sprintSelection, setSprintSelection] = React.useState([]);
+  const [sprintName, setSprintName] = React.useState("10-Job Sprint");
+  const [sprintTarget, setSprintTarget] = React.useState(10);
+  const [sprintClock, setSprintClock] = React.useState(() => Date.now());
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
     try {
-      const items = await apiGet("/application-loop/items?limit=100");
+      const [items, currentSprint] = await Promise.all([
+        apiGet("/application-loop/items?limit=100"),
+        apiGet("/application-sprints/current")
+      ]);
       setInbox(Array.isArray(items) ? items : []);
+      setSprint(currentSprint ? { ...currentSprint, client_loaded_at: Date.now() } : null);
     } catch (err) {
       setError(err.message || "Could not load the batch inbox.");
     } finally {
@@ -695,6 +709,12 @@ function BatchInboxWorkspace() {
   React.useEffect(() => {
     loadInbox();
   }, [loadInbox]);
+
+  React.useEffect(() => {
+    if (sprint?.status !== "active") return undefined;
+    const timer = window.setInterval(() => setSprintClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [sprint?.status]);
 
   function updateEntry(id, field, value) {
     setEntries((current) => current.map((entry) => entry.id === id ? { ...entry, [field]: value } : entry));
@@ -1046,6 +1066,7 @@ function BatchInboxWorkspace() {
       setMessage(result.message);
       if (pendingWindow) pendingWindow.location.replace(result.assist.target_url);
       else window.open(result.assist.target_url, "_blank", "noopener,noreferrer");
+      await loadInbox();
     } catch (err) {
       pendingWindow?.close();
       setError(err.message || "Could not open ATS Apply Assist.");
@@ -1061,6 +1082,7 @@ function BatchInboxWorkspace() {
       const result = await apiGet(`/application-loop/items/${item.loop_id}/ats-assist`);
       replaceLoopItem(result.loop_item);
       setMessage(result.message);
+      await loadInbox();
     } catch (err) {
       setError(err.message || "Could not refresh the ATS result.");
     } finally {
@@ -1099,6 +1121,7 @@ function BatchInboxWorkspace() {
       });
       replaceLoopItem(result.loop_item);
       setMessage(result.message);
+      await loadInbox();
     } catch (err) {
       setError(err.message || "Could not record the ATS outcome.");
     } finally {
@@ -1195,6 +1218,7 @@ function BatchInboxWorkspace() {
         }
       }));
       setMessage(result.message);
+      await loadInbox();
     } catch (err) {
       setError(err.message || "Could not save the recruiter note.");
     } finally {
@@ -1229,11 +1253,118 @@ function BatchInboxWorkspace() {
       });
       replaceLoopItem(result.loop_item);
       setMessage(result.message);
+      await loadInbox();
     } catch (err) {
       setError(err.message || "Could not record recruiter outreach.");
     } finally {
       setBusy("");
     }
+  }
+
+  function scrollToLoopItem(loopId) {
+    window.setTimeout(() => {
+      document.getElementById(`loop-${loopId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  }
+
+  function toggleSprintSelection(loopId) {
+    setSprintSelection((current) => {
+      if (current.includes(loopId)) return current.filter((value) => value !== loopId);
+      const limit = ["active", "paused"].includes(sprint?.status) ? sprint.stats.open_slots : sprintTarget;
+      if (current.length >= limit) return current;
+      return [...current, loopId];
+    });
+  }
+
+  async function startOrFillSprint() {
+    if (!sprintSelection.length) return;
+    const filling = ["active", "paused"].includes(sprint?.status);
+    setBusy(filling ? "sprint-add" : "sprint-start");
+    setError("");
+    setMessage("");
+    try {
+      const result = filling
+        ? await apiPost(`/application-sprints/${sprint.sprint_id}/items`, { loop_ids: sprintSelection })
+        : await apiPost("/application-sprints", {
+            name: sprintName.trim() || "10-Job Sprint",
+            target_count: sprintTarget,
+            loop_ids: sprintSelection
+          });
+      setSprint({ ...result, client_loaded_at: Date.now() });
+      setSprintSelection([]);
+      setMessage(filling ? "Replacement job added to the sprint." : `${result.name} started.`);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not update the sprint.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleSprintPause() {
+    if (!sprint || sprint.status === "completed") return;
+    const nextAction = sprint.status === "paused" ? "resume" : "pause";
+    setBusy(`sprint-${nextAction}`);
+    setError("");
+    try {
+      const result = await apiPost(`/application-sprints/${sprint.sprint_id}/${nextAction}`, {});
+      setSprint({ ...result, client_loaded_at: Date.now() });
+      setMessage(result.status === "paused" ? "Sprint paused." : "Sprint resumed.");
+    } catch (err) {
+      setError(err.message || `Could not ${nextAction} the sprint.`);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function logSprintItemToSheets(item) {
+    if (item.state !== "submitted_confirmed") return;
+    setBusy(`sheets:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost("/copilot/confirm-log", {
+        lead_id: item.loop_id,
+        company: item.company,
+        role: item.role,
+        link: item.job_url,
+        salary_quoted: "N/A",
+        source: item.source || "Unknown",
+        applied_using: "",
+        status: "Applied",
+        human_confirmed_submission: true,
+        technical_issue: false
+      });
+      if (!result.success) throw new Error(result.message || "Google Sheets did not accept the row.");
+      await apiPost(`/application-loop/items/${item.loop_id}/sheet-logged`, {
+        note: `Sheets ${result.action}: ${result.message}`,
+        sheet_write_succeeded: true
+      });
+      setMessage(result.message);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not log this confirmed application to Sheets.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function performSprintAction(sprintItem) {
+    if (!sprintItem || sprint?.status === "paused") return;
+    const item = sprintItem.loop_item;
+    const key = sprintItem.next_action.key;
+    scrollToLoopItem(item.loop_id);
+    if (key === "add_jd") openJdEditor(item);
+    else if (key === "run_fit_gate") await runFitGate([item.loop_id]);
+    else if (key === "review_fit") openReview(item);
+    else if (key === "tailor_resume") await openTailoringOptions(item);
+    else if (["wait_for_draft", "review_resume", "export_resume"].includes(key)) await openTailoringDraft(item);
+    else if (key === "open_ats") await armAtsAssist(item);
+    else if (["resolve_portal_issue", "confirm_submission"].includes(key)) await toggleAtsPanel(item);
+    else if (key === "log_sheets") await logSprintItemToSheets(item);
+    else if (key === "ready_for_outreach") await prepareRecruiterOutreach(sprint.outreach_loop_ids);
+    else if (key === "review_outreach") toggleOutreachPanel(item);
+    else if (key === "replace_job") setMessage("Select a replacement from the Application inbox, then add it to this sprint.");
   }
 
   const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
@@ -1242,12 +1373,152 @@ function BatchInboxWorkspace() {
   const pendingOutreachIds = inbox
     .filter((item) => ["submitted_confirmed", "sheet_logged"].includes(item.state))
     .map((item) => item.loop_id);
-  const outreachBatchIds = pendingOutreachIds.slice(0, 10);
+  const sprintMemberIds = new Set(sprint?.items?.map((item) => item.loop_item.loop_id) || []);
+  const activeSprint = ["active", "paused"].includes(sprint?.status);
+  const canStartNewSprint = !sprint || sprint.ready_for_next_sprint;
+  const sprintCandidateIds = new Set(
+    inbox
+      .filter((item) => !["skipped", "submitted_confirmed", "sheet_logged", "recruiter_note_ready", "outreach_done"].includes(item.state))
+      .filter((item) => !activeSprint || !sprintMemberIds.has(item.loop_id))
+      .map((item) => item.loop_id)
+  );
+  const sprintPositions = new Map((sprint?.items || []).map((item) => [item.loop_item.loop_id, item.position]));
+  const sprintFocusItem = sprint?.items?.find((item) => item.is_current)
+    || sprint?.items?.find((item) => item.next_action.key === "review_outreach")
+    || sprint?.items?.find((item) => item.next_action.key === "ready_for_outreach")
+    || null;
+  const outreachBatchIds = sprint
+    ? (sprint.outreach_unlocked ? sprint.outreach_loop_ids.filter((loopId) => pendingOutreachIds.includes(loopId)) : [])
+    : pendingOutreachIds.slice(0, 10);
   const outreachReadyCount = inbox.filter((item) => item.state === "recruiter_note_ready").length;
   const outreachDoneCount = inbox.filter((item) => item.state === "outreach_done").length;
+  const liveElapsedSeconds = sprint
+    ? sprint.stats.elapsed_seconds + (
+        sprint.status === "active"
+          ? Math.max(0, Math.floor((sprintClock - sprint.client_loaded_at) / 1000))
+          : 0
+      )
+    : 0;
+  const sprintProgress = sprint ? Math.min(100, Math.round((sprint.stats.submitted_count / sprint.stats.target_count) * 100)) : 0;
 
   return (
     <>
+      <section className="sprint-controller" aria-label="Job application sprint controller">
+        <header className="sprint-controller-header">
+          <div className="sprint-title">
+            <ListChecks size={21} />
+            <div>
+              <h2>{sprint?.name || "10-Job Sprint"}</h2>
+              <span>{sprint ? sprint.status : `${sprintSelection.length} jobs selected`}</span>
+            </div>
+          </div>
+          {activeSprint && (
+            <button className="icon-button secondary" onClick={toggleSprintPause} disabled={Boolean(busy)}>
+              {sprint.status === "paused" ? <Play size={16} /> : <Pause size={16} />}
+              <span>{sprint.status === "paused" ? "Resume" : "Pause"}</span>
+            </button>
+          )}
+        </header>
+
+        {sprint && (
+          <>
+            <div className="sprint-progress-row">
+              <div className="sprint-progress-copy">
+                <strong>{sprint.stats.submitted_count} / {sprint.stats.target_count} submitted</strong>
+                <span>{sprintProgress}%</span>
+              </div>
+              <div className="sprint-progress-track" aria-label={`${sprintProgress}% complete`}>
+                <span style={{ width: `${sprintProgress}%` }} />
+              </div>
+            </div>
+            <div className="sprint-stats" aria-label="Sprint statistics">
+              <BatchStat label="Elapsed" value={formatDuration(liveElapsedSeconds)} />
+              <BatchStat label="Sheets" value={`${sprint.stats.sheet_logged_count}/${sprint.stats.target_count}`} tone="good" />
+              <BatchStat label="Revisions" value={sprint.stats.revision_count} tone="warn" />
+              <BatchStat label="Claude calls" value={sprint.stats.claude_calls} />
+              <BatchStat label="Open slots" value={sprint.stats.open_slots} />
+            </div>
+
+            {sprintFocusItem && (
+              <div className="sprint-next-action">
+                <div>
+                  <span>Next action</span>
+                  <strong>{sprintFocusItem.loop_item.company} · {sprintFocusItem.loop_item.role}</strong>
+                  <p>{sprintFocusItem.next_action.detail}</p>
+                </div>
+                <button
+                  className="icon-button primary"
+                  onClick={() => performSprintAction(sprintFocusItem)}
+                  disabled={Boolean(busy) || sprint.status === "paused" || sprintFocusItem.next_action.key === "done"}
+                >
+                  {busy && sprintFocusItem.loop_item.loop_id === sprint.current_loop_id ? <Loader2 className="spin" size={16} /> : <ArrowRight size={16} />}
+                  <span>{sprintFocusItem.next_action.label}</span>
+                </button>
+              </div>
+            )}
+
+            <div className="sprint-job-list" role="list" aria-label="Sprint jobs">
+              {sprint.items.map((sprintItem) => (
+                <div
+                  className={`sprint-job-row ${sprintItem.is_current ? "current" : ""} ${!sprintItem.counted_toward_target ? "skipped" : ""}`}
+                  role="listitem"
+                  key={`${sprint.sprint_id}-${sprintItem.loop_item.loop_id}`}
+                >
+                  <span className="sprint-job-position">{String(sprintItem.position).padStart(2, "0")}</span>
+                  <div>
+                    <strong>{sprintItem.loop_item.role}</strong>
+                    <span>{sprintItem.loop_item.company}</span>
+                  </div>
+                  <span className="sprint-job-state">{sprintItem.loop_item.state.replaceAll("_", " ")}</span>
+                  <button
+                    className="sprint-row-action"
+                    onClick={() => performSprintAction(sprintItem)}
+                    disabled={Boolean(busy) || sprint.status === "paused" || sprintItem.next_action.key === "done"}
+                  >
+                    <span>{sprintItem.next_action.label}</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {(canStartNewSprint || (activeSprint && sprint.stats.open_slots > 0)) && (
+          <div className={`sprint-start-controls ${activeSprint ? "replacement" : ""}`}>
+            {!activeSprint && (
+              <>
+                <label>
+                  <span>Sprint name</span>
+                  <input value={sprintName} onChange={(event) => setSprintName(event.target.value)} maxLength={120} />
+                </label>
+                <label className="sprint-target-input">
+                  <span>Target</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={sprintTarget}
+                    onChange={(event) => {
+                      const next = Math.max(1, Math.min(10, Number(event.target.value) || 1));
+                      setSprintTarget(next);
+                      setSprintSelection((current) => current.slice(0, next));
+                    }}
+                  />
+                </label>
+              </>
+            )}
+            <div className="sprint-selection-status">
+              <Table2 size={17} />
+              <span>{sprintSelection.length} selected{activeSprint ? ` / ${sprint.stats.open_slots} open` : ` / ${sprintTarget}`}</span>
+            </div>
+            <button className="icon-button primary" onClick={startOrFillSprint} disabled={!sprintSelection.length || Boolean(busy)}>
+              {busy === "sprint-start" || busy === "sprint-add" ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+              <span>{activeSprint ? "Add replacement" : "Start sprint"}</span>
+            </button>
+          </div>
+        )}
+      </section>
       <section className="batch-workspace">
       <section className="batch-compose" aria-label="New application batch">
         <div className="batch-section-header">
@@ -1386,7 +1657,11 @@ function BatchInboxWorkspace() {
             <Users size={20} />
             <div>
               <h3>Recruiter outreach</h3>
-              <span>{pendingOutreachIds.length} pending / {outreachReadyCount} ready / {outreachDoneCount} sent</span>
+              <span>
+                {sprint && !sprint.outreach_unlocked
+                  ? `${sprint.stats.submitted_count}/${sprint.stats.target_count} submissions before outreach`
+                  : `${pendingOutreachIds.length} pending / ${outreachReadyCount} ready / ${outreachDoneCount} sent`}
+              </span>
             </div>
           </div>
           <Toggle label="Use Claude" checked={useClaude} onChange={setUseClaude} />
@@ -1439,16 +1714,38 @@ function BatchInboxWorkspace() {
             const hasTailoringDraft = Boolean(item.tailoring_draft);
             const canStartTailoring = item.state === "fit_checked" && fit?.decision === "apply";
             const canArmAts = Boolean(item.export_handoff) && ["approved_for_apply", "ats_opened"].includes(item.state);
+            const sprintPosition = sprintPositions.get(item.loop_id);
+            const canSelectForSprint = sprintCandidateIds.has(item.loop_id) && (
+              canStartNewSprint || (activeSprint && sprint.stats.open_slots > 0)
+            );
+            const selectedForSprint = sprintSelection.includes(item.loop_id);
             const decisionTone = fit?.decision === "apply" ? "good" : fit?.decision === "skip" ? "bad" : "warn";
             const atsTone = item.ats_assist?.status === "submitted_confirmed" || item.ats_assist?.status === "safe_fields_filled"
               ? "good"
               : item.ats_assist?.status === "armed" ? "blue" : "warn";
             return (
-              <article className={`batch-inbox-item ${hasCompleteFit ? `fit-${fit.decision}` : ""}`} key={item.loop_id}>
+              <article
+                id={`loop-${item.loop_id}`}
+                className={`batch-inbox-item ${hasCompleteFit ? `fit-${fit.decision}` : ""} ${sprint?.current_loop_id === item.loop_id ? "sprint-current" : ""}`}
+                key={item.loop_id}
+              >
                 <div className="batch-inbox-title">
-                  <div>
-                    <h3>{item.role}</h3>
-                    <p>{item.company}</p>
+                  <div className="batch-inbox-identity">
+                    {canSelectForSprint && (
+                      <label className="sprint-job-select" title="Select for sprint">
+                        <input
+                          type="checkbox"
+                          checked={selectedForSprint}
+                          onChange={() => toggleSprintSelection(item.loop_id)}
+                          disabled={!selectedForSprint && sprintSelection.length >= (activeSprint ? sprint.stats.open_slots : sprintTarget)}
+                        />
+                      </label>
+                    )}
+                    {!canSelectForSprint && sprintPosition && <span className="sprint-member-position">{sprintPosition}</span>}
+                    <div>
+                      <h3>{item.role}</h3>
+                      <p>{item.company}</p>
+                    </div>
                   </div>
                   <div className="fit-tag-stack">
                     {fit && <span className={`tag ${fit.evaluation_status === "needs_jd" ? "warn" : decisionTone}`}>{fit.evaluation_status === "needs_jd" ? "needs JD" : fit.decision}</span>}
@@ -2693,6 +2990,15 @@ function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit"
   });
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
 }
 
 function ScoreRing({ score, tone }) {

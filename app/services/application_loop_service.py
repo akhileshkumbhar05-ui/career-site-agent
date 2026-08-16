@@ -55,6 +55,7 @@ from app.schemas.application_loop import (
     ApplicationLoopOutreachSentRequest,
     ApplicationLoopOutreachUpdateRequest,
     ApplicationLoopRecruiterOutreach,
+    ApplicationLoopSheetLoggedRequest,
     ApplicationLoopState,
     ApplicationLoopTailoringApproval,
     ApplicationLoopTailoringApproveRequest,
@@ -354,6 +355,27 @@ class ApplicationLoopService:
         if row is None:
             raise KeyError(f"Application loop item not found: {loop_id}")
         return self._row_to_item(row)
+
+    def mark_sheet_logged(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopSheetLoggedRequest,
+    ) -> ApplicationLoopItem:
+        if not payload.sheet_write_succeeded:
+            raise InvalidApplicationLoopTransition(
+                "sheet_logged requires confirmation that the Sheets write succeeded or was a confirmed duplicate."
+            )
+        item = self.get_item(loop_id)
+        updated = self.transition(
+            item,
+            ApplicationLoopTransitionRequest(
+                target_state="sheet_logged",
+                actor="human",
+                note=payload.note,
+            ),
+        )
+        self._save_item(updated)
+        return updated
 
     def metrics(self, window: ApplicationLoopMetricsWindow = "7d") -> ApplicationLoopMetricsResponse:
         generated_at = self._now()

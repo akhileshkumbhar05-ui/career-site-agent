@@ -10,6 +10,7 @@ from app.config import settings
 from app.services.application_packet_export_service import ApplicationPacketExportService
 from app.services.application_packet_service import ApplicationPacketService
 from app.services.application_loop_service import ApplicationLoopService
+from app.services.application_sprint_service import ApplicationSprintService
 from app.services.application_orchestrator_service import ApplicationOrchestratorService
 from app.services.ats_autofill_service import ATSAutofillService
 from app.services.autofill_autopilot_service import AutofillAutopilotService
@@ -87,6 +88,11 @@ def get_application_loop_service() -> ApplicationLoopService:
         autofill_autopilot=get_autofill_autopilot_service(),
         recruiter_outreach=get_recruiter_outreach_batch_service(),
     )
+
+
+@lru_cache
+def get_application_sprint_service() -> ApplicationSprintService:
+    return ApplicationSprintService(loop_service=get_application_loop_service())
 
 
 @lru_cache

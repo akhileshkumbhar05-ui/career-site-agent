@@ -21,6 +21,7 @@ from app.schemas.application_loop import (
     ApplicationLoopOutreachResponse,
     ApplicationLoopOutreachSentRequest,
     ApplicationLoopOutreachUpdateRequest,
+    ApplicationLoopSheetLoggedRequest,
     ApplicationLoopTailoringApproveRequest,
     ApplicationLoopTailoringApproveResponse,
     ApplicationLoopTailoringDraftRequest,
@@ -99,6 +100,20 @@ def update_jd(
 ) -> ApplicationLoopItem:
     try:
         return service.update_jd(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/items/{loop_id}/sheet-logged", response_model=ApplicationLoopItem)
+def mark_sheet_logged(
+    loop_id: str,
+    payload: ApplicationLoopSheetLoggedRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopItem:
+    try:
+        return service.mark_sheet_logged(loop_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidApplicationLoopTransition as exc:

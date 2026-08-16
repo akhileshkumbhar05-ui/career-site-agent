@@ -150,6 +150,42 @@ def init_db() -> None:
             ON application_loop_items(created_at DESC)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_sprints (
+                sprint_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                target_count INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                paused_at TEXT,
+                completed_at TEXT,
+                total_paused_seconds INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_sprint_items (
+                sprint_id TEXT NOT NULL,
+                loop_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (sprint_id, loop_id),
+                UNIQUE (sprint_id, position),
+                FOREIGN KEY (sprint_id) REFERENCES application_sprints(sprint_id),
+                FOREIGN KEY (loop_id) REFERENCES application_loop_items(loop_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_application_sprints_status
+            ON application_sprints(status, updated_at DESC)
+            """
+        )
         conn.commit()
     finally:
         conn.close()

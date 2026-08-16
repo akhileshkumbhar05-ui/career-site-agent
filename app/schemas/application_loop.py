@@ -370,6 +370,11 @@ class ApplicationLoopJDUpdateRequest(BaseModel):
     jd_text: str = Field(min_length=20, max_length=100_000)
 
 
+class ApplicationLoopSheetLoggedRequest(BaseModel):
+    note: str = Field(min_length=3, max_length=1000)
+    sheet_write_succeeded: bool = False
+
+
 class ApplicationLoopTailoringDraftRequest(BaseModel):
     preferences: TailoringPreferences = Field(default_factory=TailoringPreferences)
     revision_reason: str = Field(default="", max_length=1000)
