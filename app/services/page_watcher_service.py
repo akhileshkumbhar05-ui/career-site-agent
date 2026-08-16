@@ -310,13 +310,23 @@ class PageWatcherService:
             page_text=page_text[:6000],
         )
         try:
-            message = self._client.messages.create(
-                model=self.model,
-                max_tokens=1500,
-                system=system,
-                messages=[{"role": "user", "content": user}],
+            request = {
+                "model": self.model,
+                "max_tokens": 1500,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+            }
+            if self.model == "claude-sonnet-5":
+                request["thinking"] = {"type": "disabled"}
+            message = self._client.messages.create(**request)
+            text_block = next(
+                (block for block in message.content if getattr(block, "type", "") == "text"),
+                None,
             )
-            raw = message.content[0].text.strip()
+            if text_block is None:
+                logger.warning("Watcher Claude response did not include a text block.")
+                return None
+            raw = text_block.text.strip()
             if raw.startswith("```"):
                 raw = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("```")).strip()
             return json.loads(raw)

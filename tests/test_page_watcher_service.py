@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from app.schemas.ats_autofill import AutofillField, WatcherObserveRequest
 from app.services.ats_autofill_service import ATSAutofillService
@@ -150,3 +151,82 @@ def test_observe_uses_matched_apply_plan_cover_letter(tmp_path) -> None:
     assert by_id["email"].value == "akhilesh@example.com"
     assert by_id["cover"].action == "fill_text"
     assert "analytics role" in by_id["cover"].value
+
+
+def test_sonnet_watcher_reads_text_after_thinking_block_and_disables_thinking() -> None:
+    captured = {}
+    payload = {
+        "page_type": "job_description",
+        "page_type_confidence": 0.94,
+        "jd": {
+            "company": "Acme Analytics",
+            "role": "Operations Data Analyst",
+            "location": "Dallas, TX",
+            "seniority": "Entry level",
+            "sponsorship_note": "No sponsorship information provided.",
+            "key_requirements": ["Python", "SQL", "Power BI"],
+            "summary": "Analyze operational data and build decision-ready reporting.",
+        },
+        "field_answers": [],
+    }
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                content=[
+                    SimpleNamespace(type="thinking", thinking="private reasoning"),
+                    SimpleNamespace(type="text", text=json.dumps(payload)),
+                ]
+            )
+
+    service = PageWatcherService(autofill=ATSAutofillService(), api_key="")
+    service.model = "claude-sonnet-5"
+    service._client = SimpleNamespace(messages=FakeMessages())
+
+    result = service.observe(
+        WatcherObserveRequest(
+            url="https://careers.acme.example/jobs/operations-data-analyst",
+            page_title="Operations Data Analyst at Acme Analytics",
+            page_text=(
+                "About the role: analyze operational data with Python, SQL, and Power BI. "
+                "Responsibilities include reporting and stakeholder decision support. "
+                "Minimum qualifications include one year of analytics experience."
+            ),
+            use_llm=True,
+        )
+    )
+
+    assert captured["model"] == "claude-sonnet-5"
+    assert captured["thinking"] == {"type": "disabled"}
+    assert result.engine == "claude"
+    assert result.page_type == "job_description"
+    assert result.jd is not None
+    assert result.jd.company == "Acme Analytics"
+    assert result.jd.key_requirements == ["Python", "SQL", "Power BI"]
+
+
+def test_watcher_falls_back_when_claude_response_has_no_text_block() -> None:
+    class FakeMessages:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(type="thinking", thinking="private reasoning")])
+
+    service = PageWatcherService(autofill=ATSAutofillService(), api_key="")
+    service.model = "claude-sonnet-5"
+    service._client = SimpleNamespace(messages=FakeMessages())
+
+    result = service.observe(
+        WatcherObserveRequest(
+            url="https://careers.acme.example/jobs/data-analyst",
+            page_title="Data Analyst at Acme",
+            page_text=(
+                "About the role: analyze operational data with Python and SQL. "
+                "Responsibilities include dashboards and reporting. Minimum qualifications: one year."
+            ),
+            use_llm=True,
+        )
+    )
+
+    assert result.engine == "heuristic"
+    assert result.page_type == "job_description"
