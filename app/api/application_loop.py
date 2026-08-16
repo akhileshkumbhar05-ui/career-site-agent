@@ -14,6 +14,8 @@ from app.schemas.application_loop import (
     ApplicationLoopFitOverrideRequest,
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
+    ApplicationLoopMetricsResponse,
+    ApplicationLoopMetricsWindow,
     ApplicationLoopOutreachBatchRequest,
     ApplicationLoopOutreachBatchResponse,
     ApplicationLoopOutreachResponse,
@@ -47,6 +49,14 @@ def list_items(
     service: ApplicationLoopService = Depends(get_application_loop_service),
 ) -> list[ApplicationLoopItem]:
     return service.list_items(limit=limit)
+
+
+@router.get("/metrics", response_model=ApplicationLoopMetricsResponse)
+def get_metrics(
+    window: ApplicationLoopMetricsWindow = "7d",
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopMetricsResponse:
+    return service.metrics(window)
 
 
 @router.post("/fit-gate", response_model=ApplicationLoopFitGateResponse)

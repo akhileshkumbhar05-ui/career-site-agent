@@ -372,6 +372,8 @@ Likely files:
 
 ### 9. Loop Metrics Dashboard
 
+Status: shipped.
+
 User payoff:
 - See where time is being lost: fit checks, tailoring revisions, ATS blockers, Sheets logging, or recruiter outreach.
 
@@ -383,6 +385,18 @@ Acceptance criteria:
 - Show counts for imported, skipped, draft-ready, approved, submitted, logged, and outreach done.
 - Show average revision count per resume.
 - Show common skip reasons and portal-failure reasons.
+
+Implemented behavior:
+- Four local-history windows cover today, 7 days, 30 days, and all time without making a Claude call.
+- The milestone funnel counts every state an application reached, including separate skipped exits, rather than only its current state.
+- Stage timing uses the first valid chronological transition for each completed pair and reports averages, medians, and sample counts.
+- The slowest completed transition is surfaced as the current bottleneck with its evidence count.
+- Quality and completion signals include tailoring revisions, tailoring score lift, portal issues, submission rate, post-submit Sheets logging, recruiter outreach, and intake-to-submit time.
+- Skip and portal-failure reasons are grouped alongside current-state distribution so recurring blockers remain visible.
+- Metrics are derived from the existing persisted application history. The state machine, human gates, Google Sheets format, and workflow behavior are unchanged.
+
+Endpoint:
+- `GET /application-loop/metrics?window={today|7d|30d|all}`
 
 Likely files:
 - `app/services/application_loop_service.py`

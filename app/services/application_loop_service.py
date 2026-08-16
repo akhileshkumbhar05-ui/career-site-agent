@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections import Counter
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 import re
 import sqlite3
+from statistics import median
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
@@ -34,6 +36,13 @@ from app.schemas.application_loop import (
     ApplicationLoopFitOverrideRequest,
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
+    ApplicationLoopMetricBottleneck,
+    ApplicationLoopMetricFunnelStage,
+    ApplicationLoopMetricReason,
+    ApplicationLoopMetricsResponse,
+    ApplicationLoopMetricsSummary,
+    ApplicationLoopMetricsWindow,
+    ApplicationLoopMetricTiming,
     ApplicationLoopOutreachBatchOutcome,
     ApplicationLoopOutreachBatchRequest,
     ApplicationLoopOutreachBatchResponse,
@@ -339,6 +348,147 @@ class ApplicationLoopService:
         if row is None:
             raise KeyError(f"Application loop item not found: {loop_id}")
         return self._row_to_item(row)
+
+    def metrics(self, window: ApplicationLoopMetricsWindow = "7d") -> ApplicationLoopMetricsResponse:
+        generated_at = self._now()
+        now = self._parse_metric_timestamp(generated_at) or datetime.now(UTC)
+        since = self._metrics_since(window, now)
+        items = [
+            item
+            for item in self.list_items(limit=100_000)
+            if since is None or (self._parse_metric_timestamp(item.created_at) or datetime.min.replace(tzinfo=UTC)) >= since
+        ]
+
+        reached = {
+            state: sum(self._reached_state(item, state) for item in items)
+            for state in ALLOWED_TRANSITIONS
+        }
+        total = len(items)
+        funnel_states = (
+            ("imported", "Imported", "milestone"),
+            ("fit_checked", "Fit checked", "milestone"),
+            ("skipped", "Skipped", "exit"),
+            ("draft_ready", "Draft ready", "milestone"),
+            ("approved_for_apply", "Approved", "milestone"),
+            ("submitted_confirmed", "Submitted", "milestone"),
+            ("sheet_logged", "Sheets logged", "milestone"),
+            ("recruiter_note_ready", "Outreach ready", "milestone"),
+            ("outreach_done", "Outreach sent", "milestone"),
+        )
+        funnel = [
+            ApplicationLoopMetricFunnelStage(
+                state=state,
+                label=label,
+                count=reached[state],
+                percent_of_imported=self._percentage(reached[state], total),
+                kind=kind,
+            )
+            for state, label, kind in funnel_states
+        ]
+
+        timing_specs = (
+            ("intake_to_fit", "Intake to fit decision", "imported", ("fit_checked", "skipped"), "fit_checked"),
+            ("fit_to_draft", "Fit decision to first draft", "fit_checked", ("draft_ready",), "draft_ready"),
+            ("draft_to_approval", "First draft to approval", "draft_ready", ("approved_for_apply",), "approved_for_apply"),
+            ("approval_to_submission", "Approval to submission", "approved_for_apply", ("submitted_confirmed",), "submitted_confirmed"),
+            ("submission_to_sheets", "Submission to Sheets", "submitted_confirmed", ("sheet_logged",), "sheet_logged"),
+            ("submission_to_outreach", "Submission to outreach note", "submitted_confirmed", ("recruiter_note_ready",), "recruiter_note_ready"),
+            ("outreach_to_sent", "Outreach note to sent", "recruiter_note_ready", ("outreach_done",), "outreach_done"),
+        )
+        stage_timings: list[ApplicationLoopMetricTiming] = []
+        for key, label, from_state, end_states, display_end_state in timing_specs:
+            samples = self._transition_duration_samples(items, from_state, end_states)
+            stage_timings.append(
+                ApplicationLoopMetricTiming(
+                    key=key,
+                    label=label,
+                    from_state=from_state,
+                    to_state=display_end_state,
+                    sample_count=len(samples),
+                    average_minutes=self._average(samples),
+                    median_minutes=round(float(median(samples)), 1) if samples else 0.0,
+                )
+            )
+
+        completed_timings = [timing for timing in stage_timings if timing.sample_count]
+        if completed_timings:
+            slowest = max(completed_timings, key=lambda timing: timing.average_minutes)
+            bottleneck = ApplicationLoopMetricBottleneck(
+                key=slowest.key,
+                label=slowest.label,
+                average_minutes=slowest.average_minutes,
+                sample_count=slowest.sample_count,
+            )
+        else:
+            bottleneck = ApplicationLoopMetricBottleneck(
+                label="Not enough completed transitions yet",
+                average_minutes=0,
+                sample_count=0,
+            )
+
+        tailored_items = [item for item in items if self._reached_state(item, "draft_ready")]
+        score_lifts = [
+            max(0, item.tailoring_draft.tailored_score - item.tailoring_draft.base_score)
+            for item in tailored_items
+            if item.tailoring_draft is not None
+        ]
+        submission_times = self._transition_duration_samples(
+            items,
+            "imported",
+            ("submitted_confirmed",),
+        )
+        portal_issue_items = [
+            item
+            for item in items
+            if item.ats_assist is not None
+            and (
+                item.ats_assist.status == "technical_issue"
+                or bool(item.ats_assist.technical_issue_note.strip())
+            )
+        ]
+        summary = ApplicationLoopMetricsSummary(
+            total_applications=total,
+            fit_checked=reached["fit_checked"],
+            skipped=reached["skipped"],
+            draft_ready=reached["draft_ready"],
+            approved=reached["approved_for_apply"],
+            submitted=reached["submitted_confirmed"],
+            sheet_logged=reached["sheet_logged"],
+            recruiter_note_ready=reached["recruiter_note_ready"],
+            outreach_done=reached["outreach_done"],
+            portal_issues=len(portal_issue_items),
+            total_revisions=sum(item.revision_count for item in tailored_items),
+            average_revisions_per_tailored=self._average(
+                [float(item.revision_count) for item in tailored_items]
+            ),
+            average_tailoring_score_lift=self._average([float(value) for value in score_lifts]),
+            average_minutes_to_submission=self._average(submission_times),
+            submission_rate=self._percentage(reached["submitted_confirmed"], total),
+            sheet_logging_rate=self._percentage(reached["sheet_logged"], reached["submitted_confirmed"]),
+            outreach_completion_rate=self._percentage(reached["outreach_done"], reached["submitted_confirmed"]),
+        )
+        return ApplicationLoopMetricsResponse(
+            window=window,
+            window_label=self._metrics_window_label(window),
+            since=since.isoformat() if since else "",
+            generated_at=generated_at,
+            summary=summary,
+            funnel=funnel,
+            stage_timings=stage_timings,
+            bottleneck=bottleneck,
+            skip_reasons=self._metric_reasons(
+                event.note
+                for item in items
+                for event in item.history
+                if event.to_state == "skipped" and event.note.strip()
+            ),
+            portal_failure_reasons=self._metric_reasons(
+                item.ats_assist.technical_issue_note
+                for item in portal_issue_items
+                if item.ats_assist and item.ats_assist.technical_issue_note.strip()
+            ),
+            current_state_counts=dict(sorted(Counter(item.state for item in items).items())),
+        )
 
     def run_fit_gate(self, payload: ApplicationLoopFitGateRunRequest) -> ApplicationLoopFitGateResponse:
         outcomes: list[ApplicationLoopFitGateOutcome] = []
@@ -1557,6 +1707,113 @@ class ApplicationLoopService:
             "Status": status,
             "Link": link,
         }
+
+    @staticmethod
+    def _reached_state(item: ApplicationLoopItem, state: ApplicationLoopState) -> bool:
+        return item.state == state or any(event.to_state == state for event in item.history)
+
+    @classmethod
+    def _transition_duration_samples(
+        cls,
+        items: list[ApplicationLoopItem],
+        from_state: ApplicationLoopState,
+        to_states: tuple[ApplicationLoopState, ...],
+    ) -> list[float]:
+        samples: list[float] = []
+        for item in items:
+            start = cls._first_state_timestamp(item, from_state)
+            if start is None:
+                continue
+            end_candidates = [
+                timestamp
+                for state in to_states
+                if (timestamp := cls._first_state_timestamp(item, state, after=start)) is not None
+            ]
+            if not end_candidates:
+                continue
+            minutes = (min(end_candidates) - start).total_seconds() / 60
+            if minutes >= 0:
+                samples.append(round(minutes, 3))
+        return samples
+
+    @classmethod
+    def _first_state_timestamp(
+        cls,
+        item: ApplicationLoopItem,
+        state: ApplicationLoopState,
+        *,
+        after: datetime | None = None,
+    ) -> datetime | None:
+        timestamps = [
+            parsed
+            for event in item.history
+            if event.to_state == state
+            and (parsed := cls._parse_metric_timestamp(event.occurred_at)) is not None
+            and (after is None or parsed >= after)
+        ]
+        if state == "imported":
+            created_at = cls._parse_metric_timestamp(item.created_at)
+            if created_at is not None and (after is None or created_at >= after):
+                timestamps.append(created_at)
+        return min(timestamps) if timestamps else None
+
+    @staticmethod
+    def _parse_metric_timestamp(value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
+    @staticmethod
+    def _metrics_since(
+        window: ApplicationLoopMetricsWindow,
+        now: datetime,
+    ) -> datetime | None:
+        if window == "all":
+            return None
+        if window == "today":
+            local_now = now.astimezone()
+            return local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+        days = 7 if window == "7d" else 30
+        return now - timedelta(days=days)
+
+    @staticmethod
+    def _metrics_window_label(window: ApplicationLoopMetricsWindow) -> str:
+        return {
+            "today": "Today",
+            "7d": "Last 7 days",
+            "30d": "Last 30 days",
+            "all": "All time",
+        }[window]
+
+    @staticmethod
+    def _average(values: list[float]) -> float:
+        return round(sum(values) / len(values), 1) if values else 0.0
+
+    @staticmethod
+    def _percentage(numerator: int, denominator: int) -> float:
+        return round((numerator / denominator) * 100, 1) if denominator else 0.0
+
+    @staticmethod
+    def _metric_reasons(values: Iterable[str]) -> list[ApplicationLoopMetricReason]:
+        counts: Counter[str] = Counter()
+        labels: dict[str, str] = {}
+        for raw in values:
+            reason = " ".join(str(raw or "").split()).strip()
+            if not reason:
+                continue
+            key = reason.casefold()
+            counts[key] += 1
+            labels.setdefault(key, reason)
+        return [
+            ApplicationLoopMetricReason(reason=labels[key], count=count)
+            for key, count in sorted(counts.items(), key=lambda item: (-item[1], labels[item[0]].casefold()))[:5]
+        ]
 
     def _now(self) -> str:
         return self._clock().astimezone(UTC).isoformat()

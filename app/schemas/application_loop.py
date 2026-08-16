@@ -23,6 +23,7 @@ ApplicationLoopState = Literal[
 ]
 
 ApplicationLoopActor = Literal["human", "agent", "system"]
+ApplicationLoopMetricsWindow = Literal["today", "7d", "30d", "all"]
 FitGateDecision = Literal["apply", "maybe", "skip"]
 FitGateEvaluationStatus = Literal["complete", "needs_jd"]
 ATSAssistStatus = Literal[
@@ -199,6 +200,70 @@ class ApplicationLoopItem(BaseModel):
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
+
+
+class ApplicationLoopMetricFunnelStage(BaseModel):
+    state: ApplicationLoopState
+    label: str
+    count: int = Field(ge=0)
+    percent_of_imported: float = Field(ge=0, le=100)
+    kind: Literal["milestone", "exit"] = "milestone"
+
+
+class ApplicationLoopMetricTiming(BaseModel):
+    key: str
+    label: str
+    from_state: ApplicationLoopState
+    to_state: ApplicationLoopState
+    sample_count: int = Field(ge=0)
+    average_minutes: float = Field(ge=0)
+    median_minutes: float = Field(ge=0)
+
+
+class ApplicationLoopMetricReason(BaseModel):
+    reason: str
+    count: int = Field(ge=1)
+
+
+class ApplicationLoopMetricBottleneck(BaseModel):
+    key: str = ""
+    label: str
+    average_minutes: float = Field(ge=0)
+    sample_count: int = Field(ge=0)
+
+
+class ApplicationLoopMetricsSummary(BaseModel):
+    total_applications: int = Field(ge=0)
+    fit_checked: int = Field(ge=0)
+    skipped: int = Field(ge=0)
+    draft_ready: int = Field(ge=0)
+    approved: int = Field(ge=0)
+    submitted: int = Field(ge=0)
+    sheet_logged: int = Field(ge=0)
+    recruiter_note_ready: int = Field(ge=0)
+    outreach_done: int = Field(ge=0)
+    portal_issues: int = Field(ge=0)
+    total_revisions: int = Field(ge=0)
+    average_revisions_per_tailored: float = Field(ge=0)
+    average_tailoring_score_lift: float = Field(ge=0)
+    average_minutes_to_submission: float = Field(ge=0)
+    submission_rate: float = Field(ge=0, le=100)
+    sheet_logging_rate: float = Field(ge=0, le=100)
+    outreach_completion_rate: float = Field(ge=0, le=100)
+
+
+class ApplicationLoopMetricsResponse(BaseModel):
+    window: ApplicationLoopMetricsWindow
+    window_label: str
+    since: str = ""
+    generated_at: str
+    summary: ApplicationLoopMetricsSummary
+    funnel: list[ApplicationLoopMetricFunnelStage]
+    stage_timings: list[ApplicationLoopMetricTiming]
+    bottleneck: ApplicationLoopMetricBottleneck
+    skip_reasons: list[ApplicationLoopMetricReason]
+    portal_failure_reasons: list[ApplicationLoopMetricReason]
+    current_state_counts: dict[str, int] = Field(default_factory=dict)
 
 
 BatchImportStatus = Literal["imported", "duplicate", "invalid"]

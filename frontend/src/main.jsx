@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
+  BarChart3,
   Bot,
   BriefcaseBusiness,
   CheckCircle2,
@@ -29,7 +30,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Timer,
   Trash2,
+  TrendingUp,
   Upload,
   Users,
   XCircle
@@ -58,12 +61,14 @@ function App() {
   const [prepared, setPrepared] = React.useState(null);
 
   const activeJob = data?.jobs?.find((row) => row.key === selectedKey) || data?.jobs?.[0] || null;
-  const standaloneWorkspace = feed === "manual" || feed === "batch";
+  const standaloneWorkspace = feed === "manual" || feed === "batch" || feed === "metrics";
   const feedTitle =
     feed === "manual"
       ? "Manual JD Review"
       : feed === "batch"
         ? "Ten-Job Batch Inbox"
+        : feed === "metrics"
+          ? "Loop Metrics"
         : feed === "fresh24"
           ? "Fresh 24h Jobs"
           : feed === "applied"
@@ -71,7 +76,7 @@ function App() {
             : "Recommended Jobs";
 
   const loadDashboard = React.useCallback(async () => {
-    if (feed === "manual" || feed === "batch") {
+    if (feed === "manual" || feed === "batch" || feed === "metrics") {
       setLoading(false);
       setData(null);
       setSelectedKey("");
@@ -188,6 +193,7 @@ function App() {
         <nav className="nav-stack" aria-label="Job feeds">
           <RailButton active={feed === "manual"} icon={FileText} label="Manual JD" onClick={() => setFeed("manual")} />
           <RailButton active={feed === "batch"} icon={Inbox} label="Batch Inbox" onClick={() => setFeed("batch")} />
+          <RailButton active={feed === "metrics"} icon={BarChart3} label="Loop Metrics" onClick={() => setFeed("metrics")} />
           <RailButton active={feed === "recommended"} icon={BriefcaseBusiness} label="Recommended" onClick={() => setFeed("recommended")} />
           <RailButton active={feed === "fresh24"} icon={Clock3} label="Fresh 24h" onClick={() => setFeed("fresh24")} />
           <RailButton active={feed === "applied"} icon={CheckCircle2} label="Already Applied" onClick={() => setFeed("applied")} />
@@ -204,8 +210,8 @@ function App() {
             <h1>{feedTitle}</h1>
             <div className="topline">
               <StatusPill tone={error ? "bad" : "good"} icon={error ? XCircle : CheckCircle2} text={error ? "Needs attention" : "Ready"} />
-              <StatusPill tone="neutral" icon={Bot} text={feed === "manual" ? "Paste JD analysis" : feed === "batch" ? "Deterministic intake" : filters.useLlm ? "LLM scoring" : "Deterministic scoring"} />
-              <StatusPill tone="neutral" icon={Eye} text={standaloneWorkspace ? "Human review" : "Browser watcher fills"} />
+              <StatusPill tone="neutral" icon={Bot} text={feed === "manual" ? "Paste JD analysis" : feed === "batch" ? "Deterministic intake" : feed === "metrics" ? "Local loop history" : filters.useLlm ? "LLM scoring" : "Deterministic scoring"} />
+              <StatusPill tone="neutral" icon={Eye} text={feed === "metrics" ? "Zero model calls" : standaloneWorkspace ? "Human review" : "Browser watcher fills"} />
               {feed === "recommended" && <StatusPill tone="sponsor" icon={ShieldAlert} text="DOL sponsor source" />}
             </div>
           </div>
@@ -236,6 +242,8 @@ function App() {
           <ManualJDWorkspace />
         ) : feed === "batch" ? (
           <BatchInboxWorkspace />
+        ) : feed === "metrics" ? (
+          <LoopMetricsDashboard />
         ) : (
           <>
             <Toolbar feed={feed} filters={filters} setFilters={setFilters} />
@@ -354,6 +362,211 @@ function Toggle({ label, checked, onChange, disabled = false }) {
       <strong>{label}</strong>
     </label>
   );
+}
+
+const METRICS_WINDOWS = [
+  ["today", "Today"],
+  ["7d", "7 days"],
+  ["30d", "30 days"],
+  ["all", "All time"]
+];
+
+function LoopMetricsDashboard() {
+  const [windowKey, setWindowKey] = React.useState("7d");
+  const [metrics, setMetrics] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
+  const loadMetrics = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setMetrics(await apiGet(`/application-loop/metrics?window=${windowKey}`));
+    } catch (err) {
+      setError(err.message || "Could not load loop metrics.");
+    } finally {
+      setLoading(false);
+    }
+  }, [windowKey]);
+
+  React.useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics]);
+
+  const summary = metrics?.summary;
+  return (
+    <section className="metrics-workspace" aria-label="Application loop metrics">
+      <div className="metrics-controls">
+        <div className="metrics-window-control" aria-label="Metrics time window">
+          {METRICS_WINDOWS.map(([value, label]) => (
+            <button className={windowKey === value ? "active" : ""} onClick={() => setWindowKey(value)} key={value}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="metrics-refresh">
+          {metrics?.generated_at && <span>Updated {formatDateTime(metrics.generated_at)}</span>}
+          <button className="icon-button ghost compact-icon" title="Refresh metrics" onClick={loadMetrics} disabled={loading}>
+            {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="notice notice-bad">
+          <AlertTriangle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {loading && !metrics ? (
+        <div className="metrics-loading">
+          <Loader2 className="spin" size={24} />
+          <span>Calculating loop history</span>
+        </div>
+      ) : summary ? (
+        <>
+          <section className="metrics-kpi-strip" aria-label="Loop summary">
+            <MetricKpi label="Applications" value={summary.total_applications} />
+            <MetricKpi label="Submitted" value={summary.submitted} tone="good" />
+            <MetricKpi label="Skipped" value={summary.skipped} tone="warn" />
+            <MetricKpi label="Portal issues" value={summary.portal_issues} tone="bad" />
+            <MetricKpi label="Avg revisions" value={summary.average_revisions_per_tailored.toFixed(1)} />
+            <MetricKpi label="Avg score lift" value={`+${summary.average_tailoring_score_lift.toFixed(1)}`} suffix="pts" tone="blue" />
+          </section>
+
+          <section className="metrics-bottleneck" aria-label="Current loop bottleneck">
+            <Timer size={22} />
+            <div>
+              <span>Slowest completed stage</span>
+              <strong>{metrics.bottleneck.label}</strong>
+            </div>
+            <div className="metrics-bottleneck-value">
+              <strong>{formatMetricDuration(metrics.bottleneck.average_minutes)}</strong>
+              <span>{metrics.bottleneck.sample_count} sample{metrics.bottleneck.sample_count === 1 ? "" : "s"}</span>
+            </div>
+          </section>
+
+          <div className="metrics-main-grid">
+            <section className="metrics-band" aria-label="Application funnel">
+              <MetricsSectionHeader icon={TrendingUp} title="Milestone funnel" meta={`${metrics.window_label} / reached at least once`} />
+              <div className="metrics-funnel">
+                {metrics.funnel.map((stage) => (
+                  <div className={`metrics-funnel-row ${stage.kind === "exit" ? "exit" : ""}`} key={stage.state}>
+                    <span>{stage.label}</span>
+                    <div className="metrics-funnel-track">
+                      <i style={{ width: `${stage.percent_of_imported}%` }} />
+                    </div>
+                    <strong>{stage.count}</strong>
+                    <small>{stage.percent_of_imported.toFixed(1)}%</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="metrics-band" aria-label="Stage timing">
+              <MetricsSectionHeader icon={Timer} title="Stage timing" meta="Completed transitions only" />
+              <div className="metrics-timing-list">
+                {metrics.stage_timings.map((timing) => (
+                  <div className="metrics-timing-row" key={timing.key}>
+                    <span>{timing.label}</span>
+                    <strong>{timing.sample_count ? formatMetricDuration(timing.average_minutes) : "--"}</strong>
+                    <small>median {timing.sample_count ? formatMetricDuration(timing.median_minutes) : "--"}</small>
+                    <small>{timing.sample_count} sample{timing.sample_count === 1 ? "" : "s"}</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <section className="metrics-rate-strip" aria-label="Loop completion rates">
+            <MetricRate label="Application submission" value={summary.submission_rate} />
+            <MetricRate label="Sheets logging after submit" value={summary.sheet_logging_rate} />
+            <MetricRate label="Recruiter outreach after submit" value={summary.outreach_completion_rate} />
+            <div className="metrics-time-to-submit">
+              <span>Average intake to submission</span>
+              <strong>{formatMetricDuration(summary.average_minutes_to_submission)}</strong>
+            </div>
+          </section>
+
+          <div className="metrics-reasons-grid">
+            <MetricReasonList title="Skip reasons" rows={metrics.skip_reasons} empty="No skips in this window" tone="warn" />
+            <MetricReasonList title="Portal failure reasons" rows={metrics.portal_failure_reasons} empty="No portal failures in this window" tone="bad" />
+            <section className="metrics-band metrics-state-band" aria-label="Current state distribution">
+              <MetricsSectionHeader icon={BarChart3} title="Current states" meta={`${summary.total_applications} active records`} />
+              <div className="metrics-state-list">
+                {Object.entries(metrics.current_state_counts).length ? Object.entries(metrics.current_state_counts).map(([state, count]) => (
+                  <div key={state}>
+                    <span>{state.replaceAll("_", " ")}</span>
+                    <strong>{count}</strong>
+                  </div>
+                )) : <p>No application records in this window</p>}
+              </div>
+            </section>
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function MetricKpi({ label, value, suffix = "", tone = "neutral" }) {
+  return (
+    <div className={`metrics-kpi ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {suffix && <small>{suffix}</small>}
+    </div>
+  );
+}
+
+function MetricsSectionHeader({ icon: Icon, title, meta }) {
+  return (
+    <header className="metrics-section-header">
+      <Icon size={18} />
+      <div>
+        <h2>{title}</h2>
+        <span>{meta}</span>
+      </div>
+    </header>
+  );
+}
+
+function MetricRate({ label, value }) {
+  return (
+    <div className="metrics-rate">
+      <div><span>{label}</span><strong>{value.toFixed(1)}%</strong></div>
+      <div className="metrics-rate-track"><i style={{ width: `${value}%` }} /></div>
+    </div>
+  );
+}
+
+function MetricReasonList({ title, rows, empty, tone }) {
+  return (
+    <section className={`metrics-band metrics-reason-band ${tone}`}>
+      <header><h2>{title}</h2><span>{rows.length} grouped reason{rows.length === 1 ? "" : "s"}</span></header>
+      {rows.length ? rows.map((row) => (
+        <div className="metrics-reason-row" key={row.reason}>
+          <p>{row.reason}</p>
+          <strong>{row.count}</strong>
+        </div>
+      )) : <p className="metrics-empty-copy">{empty}</p>}
+    </section>
+  );
+}
+
+function formatMetricDuration(minutes) {
+  const value = Number(minutes || 0);
+  if (!value) return "0m";
+  if (value < 60) return `${value.toFixed(value < 10 ? 1 : 0)}m`;
+  if (value < 1440) {
+    const hours = Math.floor(value / 60);
+    const remaining = Math.round(value % 60);
+    return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+  }
+  const days = Math.floor(value / 1440);
+  const hours = Math.round((value % 1440) / 60);
+  return hours ? `${days}d ${hours}h` : `${days}d`;
 }
 
 const BATCH_SOURCES = ["Jobright AI", "LinkedIn", "Referral", "Company Website", "Simplify", "TikTok", "Cognizant", "Unknown"];
