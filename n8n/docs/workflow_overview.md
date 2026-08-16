@@ -40,6 +40,6 @@ WF6 packet exports include `apply_plan.json` for browser-assisted form filling, 
 
 ## Gmail email action logging
 
-Deploy `google_cloud/Code.gs` v14 before enabling the updated WF4 or WF5 sheet nodes. The Apps Script creates an `Email Actions` tab automatically, validates status updates against the live sheet dropdown, and records every actionable or manual-review email result. Acknowledgement emails are logged but do not rewrite the default `Applied` status.
+Deploy `google_cloud/Code.gs` v16 before enabling the sheet-writing workflows. The Apps Script creates an `Email Actions` tab automatically, validates status updates against the live sheet dropdown, blocks unconfirmed `Applied` writes, skips duplicate application rows, and records every actionable or manual-review email result. Acknowledgement emails are logged but do not rewrite the default `Applied` status.
 
 Email reasoning is configured in `data/email_status_rules.json`. Add or tune rules there so production behavior follows the sheet dropdown values instead of Python code edits.

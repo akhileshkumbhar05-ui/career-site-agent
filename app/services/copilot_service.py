@@ -19,12 +19,14 @@ from app.schemas.copilot import (
     ConfirmApplicationLogResponse,
     ManualJDAnalyzeRequest,
     ManualJDAnalyzeResponse,
+    PrepareApplicationLogRequest,
+    PrepareApplicationLogResponse,
     SafeApplyPlan,
     SheetApplicationRow,
 )
 from app.schemas.job import JobQualityGateRequest
 from app.schemas.resume import ResumeTailorRequest
-from app.schemas.tracker import ApplicationRowCreateRequest
+from app.schemas.tracker import ApplicationRowCreateRequest, SheetsLogRequest
 from app.services.job_quality_gate_service import JobQualityGateService
 from app.services.llm_match_service import LLMMatchService
 from app.services.tailoring_service import TailoringService
@@ -81,7 +83,7 @@ class ManualJDCopilotService:
             salary_quoted=job["salary_quoted"],
             source=job["source"],
             applied_using=applied_using,
-            status="Applied",
+            status="",
             job_url=job["discovered_url"],
             date_applied="",
         ).as_legacy_sheet_row()
@@ -110,6 +112,57 @@ class ManualJDCopilotService:
         )
         return response
 
+    def prepare_log(self, payload: PrepareApplicationLogRequest) -> PrepareApplicationLogResponse:
+        applied_using = self._resolve_applied_using(payload.applied_using, payload.source, payload.link)
+        if applied_using not in APPLIED_USING_VALUES:
+            raise HTTPException(status_code=400, detail=f"Applied Using must be one of: {', '.join(APPLIED_USING_VALUES)}")
+
+        row = self._sheet_row(
+            company=payload.company,
+            role=payload.role,
+            salary_quoted=payload.salary_quoted,
+            source=payload.source,
+            applied_using=applied_using,
+            status="Not Yet Applied Due to Technical Issue" if payload.technical_issue else "",
+            job_url=payload.link,
+            date_applied=self._today() if payload.technical_issue else "",
+        )
+        legacy_row = row.as_legacy_sheet_row()
+        duplicate = self._find_duplicate(row)
+        audit = {
+            "event": "sheet_write_proposed",
+            "created_at": self._now_iso(),
+            "lead_id": payload.lead_id,
+            "row": legacy_row,
+            "technical_issue": payload.technical_issue,
+            "duplicate": duplicate,
+        }
+        self._append_jsonl(self.audit_path, audit)
+
+        if duplicate:
+            return PrepareApplicationLogResponse(
+                success=True,
+                action="duplicate",
+                message="An existing row matches this proposal; no write is needed.",
+                row=legacy_row,
+                duplicate_reason=duplicate["reason"],
+                requires_human_confirmation=not payload.technical_issue,
+                audit_path=str(self.audit_path),
+            )
+
+        return PrepareApplicationLogResponse(
+            success=True,
+            action="ready",
+            message=(
+                "Technical-issue row is ready to commit."
+                if payload.technical_issue
+                else "Row is ready; Date and Status remain blank until manual submission is confirmed."
+            ),
+            row=legacy_row,
+            requires_human_confirmation=not payload.technical_issue,
+            audit_path=str(self.audit_path),
+        )
+
     def confirm_log(self, payload: ConfirmApplicationLogRequest) -> ConfirmApplicationLogResponse:
         status = "Not Yet Applied Due to Technical Issue" if payload.technical_issue else payload.status
         if status not in STATUS_VALUES:
@@ -129,7 +182,7 @@ class ManualJDCopilotService:
             applied_using=applied_using,
             status=status,
             job_url=payload.link,
-            date_applied=payload.date_applied,
+            date_applied=payload.date_applied.strip() or self._today(),
         )
         legacy_row = row.as_legacy_sheet_row()
         duplicate = self._find_duplicate(row)
@@ -149,6 +202,51 @@ class ManualJDCopilotService:
                 message="Duplicate row found; no new sheet-style row was written.",
                 row=legacy_row,
                 audit_path=str(self.audit_path),
+                destination="none",
+            )
+
+        if self.tracker.sheets_configured:
+            sheet_result = self.tracker.log_to_sheets(
+                SheetsLogRequest(
+                    date=row.date_applied,
+                    company=row.company,
+                    role=row.role,
+                    salary=row.salary_quoted,
+                    job_posted_on=row.source,
+                    applied_using=row.applied_using,
+                    status=row.status,
+                    link=row.job_url,
+                    human_confirmed_submission=payload.human_confirmed_submission,
+                    technical_issue=payload.technical_issue,
+                )
+            )
+            if not sheet_result.success:
+                self._append_jsonl(
+                    self.audit_path,
+                    {**audit_base, "event": "sheet_write_failed", "message": sheet_result.message},
+                )
+                return ConfirmApplicationLogResponse(
+                    success=False,
+                    action="write_failed",
+                    message=sheet_result.message,
+                    row=legacy_row,
+                    audit_path=str(self.audit_path),
+                    destination="google_sheets",
+                )
+
+            duplicate_skipped = sheet_result.mode == "duplicate_skipped"
+            event = "sheet_write_duplicate_skipped" if duplicate_skipped else "sheet_write_created"
+            self._append_jsonl(
+                self.audit_path,
+                {**audit_base, "event": event, "target_row": sheet_result.target_row},
+            )
+            return ConfirmApplicationLogResponse(
+                success=True,
+                action="duplicate_skipped" if duplicate_skipped else "created",
+                message=sheet_result.message,
+                row=legacy_row,
+                audit_path=str(self.audit_path),
+                destination="google_sheets",
             )
 
         self.tracker.add_row(
@@ -160,16 +258,16 @@ class ManualJDCopilotService:
                 applied_using=row.applied_using,
                 status=row.status,
                 link=row.job_url,
-                job_id=payload.lead_id or None,
             )
         )
         self._append_jsonl(self.audit_path, {**audit_base, "event": "sheet_write_created"})
         return ConfirmApplicationLogResponse(
             success=True,
             action="created",
-            message="Application row saved in the legacy 8-column sheet format.",
+            message="Application row saved locally; Google Apps Script is not configured.",
             row=legacy_row,
             audit_path=str(self.audit_path),
+            destination="local_tracker",
         )
 
     def _tailoring_payload(self, match: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
@@ -254,18 +352,7 @@ class ManualJDCopilotService:
         )
 
     def _find_duplicate(self, row: SheetApplicationRow) -> dict[str, str] | None:
-        rows = self.tracker.list_rows()
-        target_link = row.job_url.strip().lower()
-        if target_link:
-            for existing in rows:
-                if existing.link.strip().lower() == target_link:
-                    return {"reason": "link", "company": existing.company_applied, "role": existing.role}
-        company = row.company.strip().lower()
-        role = row.role.strip().lower()
-        for existing in rows:
-            if existing.company_applied.strip().lower() == company and existing.role.strip().lower() == role:
-                return {"reason": "company_role", "company": existing.company_applied, "role": existing.role}
-        return None
+        return self.tracker.find_duplicate(company=row.company, role=row.role, link=row.job_url)
 
     def _sheet_row(
         self,
@@ -280,7 +367,7 @@ class ManualJDCopilotService:
         date_applied: str,
     ) -> SheetApplicationRow:
         return SheetApplicationRow(
-            date_applied=date_applied.strip() or self._today(),
+            date_applied=date_applied.strip(),
             company=company.strip(),
             role=role.strip(),
             salary_quoted=salary_quoted.strip() or "N/A",
@@ -295,14 +382,27 @@ class ManualJDCopilotService:
         explicit = value.strip()
         if explicit:
             return explicit
-        lowered = f"{source} {link}".lower()
-        if "linkedin" in lowered:
+
+        link_lower = link.strip().lower()
+        if "linkedin.com" in link_lower:
             return "LinkedIn"
-        if "indeed" in lowered:
+        if "indeed.com" in link_lower:
             return "Indeed"
-        if "ziprecruiter" in lowered:
+        if "ziprecruiter.com" in link_lower:
             return "ZipRecruiter"
-        if "jobright.ai" in lowered and not any(domain in lowered for domain in ["greenhouse", "ashby", "lever", "myworkdayjobs"]):
+        if "jobright.ai" in link_lower:
+            return "Jobright.ai"
+        if link_lower:
+            return "Company Website"
+
+        source_lower = source.strip().lower()
+        if "linkedin" in source_lower:
+            return "LinkedIn"
+        if "indeed" in source_lower:
+            return "Indeed"
+        if "ziprecruiter" in source_lower:
+            return "ZipRecruiter"
+        if "jobright" in source_lower:
             return "Jobright.ai"
         return "Company Website"
 

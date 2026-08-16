@@ -1,6 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel
 
+from app.schemas.sheets import AppliedUsingValue, SheetStatus
+
 
 class ApplicationRowCreateRequest(BaseModel):
     company_applied: str
@@ -54,14 +56,16 @@ class SheetsLogRequest(BaseModel):
     role: str
     salary: str = "N/A"
     job_posted_on: str = "Unknown"
-    applied_using: str = "Company Website"
-    status: str = "Applied"
+    applied_using: AppliedUsingValue = "Company Website"
+    status: SheetStatus = "Applied"
     link: str = ""
     job_id: Optional[str] = None
     base_match_percent: Optional[int] = None
     tailored_match_percent: Optional[int] = None
     resume_version_used: Optional[str] = None
     notes: Optional[str] = None
+    human_confirmed_submission: bool = False
+    technical_issue: bool = False
 
 
 class SheetsLogResponse(BaseModel):

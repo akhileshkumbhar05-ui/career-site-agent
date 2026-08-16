@@ -108,6 +108,7 @@ def test_log_to_sheets_writes_job_id_inside_role(monkeypatch):
             status="Applied",
             link="https://example.com/job/best-buy-1027197br",
             job_id="1027197BR",
+            human_confirmed_submission=True,
         )
     )
 
@@ -120,6 +121,151 @@ def test_log_to_sheets_writes_job_id_inside_role(monkeypatch):
         and row.job_id == "1027197BR"
         for row in service.list_rows()
     )
+
+
+def test_log_to_sheets_blocks_applied_before_manual_confirmation(monkeypatch):
+    called = False
+
+    def fake_post(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("HTTP must not be called before confirmation")
+
+    monkeypatch.setattr(settings, "google_apps_script_url", "https://example.com/apps-script")
+    monkeypatch.setattr("app.services.tracker_service.httpx.post", fake_post)
+
+    result = TrackerService().log_to_sheets(
+        SheetsLogRequest(
+            company="Unconfirmed Co",
+            role="Data Analyst",
+            link="https://example.com/jobs/unconfirmed",
+        )
+    )
+
+    assert result.success is False
+    assert "manual submission confirmation" in result.message
+    assert called is False
+
+
+def test_log_to_sheets_allows_technical_issue_without_submission_confirmation(monkeypatch):
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {"success": True, "script_version": "v16", "mode": "appended_new_row"}
+
+    def fake_post(url, json, timeout, follow_redirects):
+        captured.update(json)
+        return FakeResponse()
+
+    monkeypatch.setattr(settings, "google_apps_script_url", "https://example.com/apps-script")
+    monkeypatch.setattr("app.services.tracker_service.httpx.post", fake_post)
+
+    result = TrackerService().log_to_sheets(
+        SheetsLogRequest(
+            company="Broken Portal Co",
+            role="Data Analyst",
+            link="https://example.com/jobs/broken",
+            technical_issue=True,
+        )
+    )
+
+    assert result.success is True
+    assert captured["status"] == "Not Yet Applied Due to Technical Issue"
+    assert captured["human_confirmed_submission"] is False
+
+
+def test_tracker_duplicate_check_uses_canonical_link_before_company_and_role():
+    service = TrackerService()
+    service.add_row(
+        ApplicationRowCreateRequest(
+            company_applied="Original Company",
+            role="Original Role",
+            link="https://jobs.example.com/opening/867?utm_source=jobright&ref=feed",
+        )
+    )
+
+    duplicate = service.find_duplicate(
+        company="Renamed Company",
+        role="Renamed Role",
+        link="https://jobs.example.com/opening/867/",
+    )
+
+    assert duplicate == {
+        "reason": "link",
+        "company": "Original Company",
+        "role": "Original Role",
+    }
+
+
+def test_internal_not_applied_candidate_does_not_block_sheet_proposal():
+    service = TrackerService()
+    service.add_row(
+        ApplicationRowCreateRequest(
+            company_applied="Pipeline Candidate Co",
+            role="Data Analyst",
+            status="Not Applied",
+            link="https://jobs.example.com/opening/pipeline-candidate",
+        )
+    )
+
+    duplicate = service.find_duplicate(
+        company="Pipeline Candidate Co",
+        role="Data Analyst",
+        link="https://jobs.example.com/opening/pipeline-candidate",
+    )
+
+    assert duplicate is None
+
+
+def test_confirmed_sheet_write_preserves_existing_local_pipeline_metadata(monkeypatch):
+    service = TrackerService()
+    service.add_row(
+        ApplicationRowCreateRequest(
+            company_applied="Metadata Co",
+            role="Operations Analyst",
+            status="Not Applied",
+            link="https://careers.example.com/jobs/metadata-1",
+            job_id="metadata-1",
+            base_match_percent=79,
+            tailored_match_percent=88,
+            resume_version_used="data_analyst_v3",
+            notes="Pipeline fit evidence.",
+        )
+    )
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {"success": True, "script_version": "v16", "mode": "appended_new_row"}
+
+    monkeypatch.setattr(settings, "google_apps_script_url", "https://example.com/apps-script")
+    monkeypatch.setattr("app.services.tracker_service.httpx.post", lambda *args, **kwargs: FakeResponse())
+
+    result = service.log_to_sheets(
+        SheetsLogRequest(
+            company="Metadata Co",
+            role="Operations Analyst",
+            link="https://careers.example.com/jobs/metadata-1",
+            human_confirmed_submission=True,
+        )
+    )
+    stored = next(row for row in service.list_rows() if row.company_applied == "Metadata Co")
+
+    assert result.success is True
+    assert stored.status == "Applied"
+    assert stored.job_id == "metadata-1"
+    assert stored.base_match_percent == 79
+    assert stored.tailored_match_percent == 88
+    assert stored.resume_version_used == "data_analyst_v3"
+    assert stored.notes == "Pipeline fit evidence."
 
 
 def test_update_status_existing_row():

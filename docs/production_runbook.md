@@ -272,7 +272,7 @@ If email actions do not appear in Google Sheets:
 
 If acknowledgement emails reset or spam statuses:
 
-- Confirm `google_cloud/Code.gs` is deployed at v13 or newer.
+- Confirm `google_cloud/Code.gs` is deployed at v16 or newer.
 - Confirm FastAPI is running with the config-driven classifier from `data/email_status_rules.json`.
 - WF4 and WF5 should log acknowledgement emails to `Email Actions`, but should not rewrite the `Jobs Applied` status column for them.
 

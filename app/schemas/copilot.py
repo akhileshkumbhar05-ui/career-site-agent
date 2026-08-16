@@ -4,37 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
-APPLIED_USING_VALUES = (
-    "LinkedIn",
-    "Indeed",
-    "Company Website",
-    "ZipRecruiter",
-    "Jobright.ai",
-)
-
-STATUS_VALUES = (
-    "Applied",
-    "Screening Interview Call",
-    "Technical Interview Call",
-    "HR Interview Call",
-    "Rejection",
-    "Accepted/Offered Job",
-    "Not Yet Applied Due to Technical Issue",
-    "Cleared Automated Review",
-    "ATS Rejection / Scope for Direct Contact",
-    "Initial Rejection - Subject to further details",
-)
-
-SHEET_COLUMNS = (
-    "Date",
-    "Company Applied",
-    "Role",
-    "Salary Quoted while Applying",
-    "Job Posted On",
-    "Applied Using",
-    "Status",
-    "Link",
+from app.schemas.sheets import (
+    APPLIED_USING_VALUES,
+    SHEET_COLUMNS,
+    STATUS_VALUES,
+    SheetApplicationRow,
 )
 
 
@@ -56,29 +30,6 @@ class SafeApplyPlan(BaseModel):
     human_review_required: list[str]
     blocked_actions: list[str]
     submission_boundary: str
-
-
-class SheetApplicationRow(BaseModel):
-    date_applied: str
-    company: str
-    role: str
-    salary_quoted: str
-    source: str
-    applied_using: str
-    status: str
-    job_url: str
-
-    def as_legacy_sheet_row(self) -> dict[str, str]:
-        return {
-            "Date": self.date_applied,
-            "Company Applied": self.company,
-            "Role": self.role,
-            "Salary Quoted while Applying": self.salary_quoted,
-            "Job Posted On": self.source,
-            "Applied Using": self.applied_using,
-            "Status": self.status,
-            "Link": self.job_url,
-        }
 
 
 class ManualJDAnalyzeResponse(BaseModel):
@@ -106,9 +57,31 @@ class ConfirmApplicationLogRequest(BaseModel):
     technical_issue: bool = False
 
 
+class PrepareApplicationLogRequest(BaseModel):
+    lead_id: str = ""
+    company: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    link: str = ""
+    salary_quoted: str = "N/A"
+    source: str = "Unknown"
+    applied_using: str = ""
+    technical_issue: bool = False
+
+
+class PrepareApplicationLogResponse(BaseModel):
+    success: bool
+    action: Literal["ready", "duplicate"]
+    message: str
+    row: dict[str, str]
+    duplicate_reason: Literal["link", "company_role"] | None = None
+    requires_human_confirmation: bool = True
+    audit_path: str = ""
+
+
 class ConfirmApplicationLogResponse(BaseModel):
     success: bool
-    action: Literal["created", "duplicate_skipped", "rejected"]
+    action: Literal["created", "duplicate_skipped", "rejected", "write_failed"]
     message: str
     row: dict[str, str] | None = None
     audit_path: str = ""
+    destination: Literal["google_sheets", "local_tracker", "none"] = "none"

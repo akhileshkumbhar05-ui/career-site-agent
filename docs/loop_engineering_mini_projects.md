@@ -192,6 +192,8 @@ Likely files:
 
 ### 6. Sheets Logging Proposal
 
+Implementation status: shipped as a proposal-then-commit backend loop.
+
 User payoff:
 - The row is ready while the resume is being tailored, but it is not marked Applied until Akhilesh confirms manual submission.
 
@@ -210,6 +212,20 @@ Likely files:
 - `app/services/copilot_service.py`
 - `google_cloud/Code.gs`
 - `tests/test_tracker.py`
+
+What this mini-project teaches:
+- Side effects should have separate prepare and commit operations.
+- A proposal can contain the exact eight columns while leaving `Date` and `Status` blank until submission.
+- Deterministic rules resolve discovery source and final application channel without spending LLM tokens.
+- Duplicate checks normalize links and check them before company plus role.
+- The FastAPI service and Apps Script both enforce the manual submission gate, so bypassing one layer is not enough.
+
+Endpoints:
+- `POST /copilot/prepare-log` returns the canonical row without writing it.
+- `POST /copilot/confirm-log` writes only after confirmation, or records the controlled technical-issue status.
+
+The configured Apps Script path writes Google Sheets and mirrors successful writes locally. When Apps Script is
+not configured, the confirmed row remains in the local tracker and the response names that destination explicitly.
 
 ### 7. ATS Apply Assist Loop
 

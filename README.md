@@ -97,6 +97,11 @@ Agent endpoints:
 - `POST /agents/track-email`
 - `POST /agents/run-pipeline`
 
+Manual application loop endpoints:
+- `POST /copilot/analyze-jd`
+- `POST /copilot/prepare-log`
+- `POST /copilot/confirm-log`
+
 Agent CLI:
 ```bash
 python scripts/run_career_agents.py discover --use-llm --max-enqueue 10

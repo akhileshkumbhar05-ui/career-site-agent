@@ -157,6 +157,9 @@ def check_apps_script() -> tuple[str, str, str]:
         "getAllowedStatusValues",
         "resolveAllowedStatus",
         "repair_job_validations",
+        "human_confirmed_submission",
+        "findExistingJobRow",
+        "duplicate_skipped",
         "doGet",
     ]
     missing = [item for item in required if item not in source]
@@ -164,7 +167,11 @@ def check_apps_script() -> tuple[str, str, str]:
         return ("FAIL", "Code.gs capabilities", f"Missing markers: {', '.join(missing)}")
 
     version = version_match.group(1) if version_match else "unknown"
-    return ("PASS", "Code.gs capabilities", f"{version}; dropdown-safe status writer, validation repair, and email action audit present")
+    return (
+        "PASS",
+        "Code.gs capabilities",
+        f"{version}; confirmation-gated, duplicate-safe writer with validation repair and email action audit",
+    )
 
 
 def check_target_companies() -> tuple[str, str, str]:
@@ -386,6 +393,9 @@ def check_live_apps_script(env: dict[str, str]) -> tuple[str, str, str]:
         return ("FAIL", "Live Apps Script deployment", "No Status dropdown options returned")
 
     version = payload.get("script_version", "unknown")
+    version_match = re.fullmatch(r"v(\d+)", str(version))
+    if not version_match or int(version_match.group(1)) < 16:
+        return ("FAIL", "Live Apps Script deployment", f"{version}; deploy Code.gs v16 or newer")
     return ("PASS", "Live Apps Script deployment", f"{version}; {len(statuses)} live dropdown statuses")
 
 

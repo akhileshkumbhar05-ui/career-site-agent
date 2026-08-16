@@ -1,10 +1,12 @@
 import re
 from datetime import datetime, UTC
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
 from app.config import settings
 from app.db import init_db, get_db_connection
+from app.schemas.sheets import APPLIED_USING_VALUES, STATUS_VALUES
 from app.schemas.tracker import (
     ApplicationRow,
     ApplicationRowCreateRequest,
@@ -15,11 +17,43 @@ from app.schemas.tracker import (
 )
 
 
+TRACKING_QUERY_KEYS = {
+    "__jvsd",
+    "__jvst",
+    "gh_src",
+    "lever-source",
+    "ref",
+    "referrer",
+    "source",
+}
+
+
 class TrackerService:
     def __init__(self) -> None:
         init_db()
 
+    @property
+    def sheets_configured(self) -> bool:
+        return bool(settings.google_apps_script_url)
+
     def log_to_sheets(self, payload: SheetsLogRequest) -> SheetsLogResponse:
+        status = "Not Yet Applied Due to Technical Issue" if payload.technical_issue else payload.status
+        if status not in STATUS_VALUES:
+            return SheetsLogResponse(
+                success=False,
+                message=f"Status must be one of: {', '.join(STATUS_VALUES)}",
+            )
+        if payload.applied_using not in APPLIED_USING_VALUES:
+            return SheetsLogResponse(
+                success=False,
+                message=f"Applied Using must be one of: {', '.join(APPLIED_USING_VALUES)}",
+            )
+        if status == "Applied" and not payload.human_confirmed_submission:
+            return SheetsLogResponse(
+                success=False,
+                message="Cannot write Status=Applied without manual submission confirmation.",
+            )
+
         script_url = settings.google_apps_script_url
         if not script_url:
             return SheetsLogResponse(
@@ -28,6 +62,11 @@ class TrackerService:
             )
 
         role_for_tracking = self.format_role_for_tracking(payload.role, payload.job_id)
+        existing_local = self.find_local_candidate(
+            company=payload.company,
+            role=payload.role,
+            link=payload.link,
+        )
 
         sheets_payload = {
             "target": "jobs_applied",
@@ -37,8 +76,10 @@ class TrackerService:
             "salary": payload.salary or "N/A",
             "job_posted_on": payload.job_posted_on or "Unknown",
             "applied_using": payload.applied_using or "Company Website",
-            "status": payload.status or "Applied",
+            "status": status,
             "link": payload.link or "",
+            "human_confirmed_submission": payload.human_confirmed_submission,
+            "technical_issue": payload.technical_issue,
         }
 
         try:
@@ -56,17 +97,17 @@ class TrackerService:
                 message=f"Failed to reach Google Apps Script: {exc}",
             )
 
-        if data.get("success"):
+        if data.get("success") and data.get("mode") != "duplicate_skipped":
             self.add_row(
                 ApplicationRowCreateRequest(
                     company_applied=payload.company,
-                    role=role_for_tracking,
+                    role=existing_local.role if existing_local else role_for_tracking,
                     salary_quoted_while_applying=payload.salary or "N/A",
                     job_posted_on=payload.job_posted_on or "Unknown",
                     applied_using=payload.applied_using or "Company Website",
-                    status=payload.status or "Applied",
+                    status=status,
                     link=payload.link or "",
-                    job_id=payload.job_id,
+                    job_id=payload.job_id or (existing_local.job_id if existing_local else None),
                     base_match_percent=payload.base_match_percent,
                     tailored_match_percent=payload.tailored_match_percent,
                     resume_version_used=payload.resume_version_used,
@@ -76,11 +117,98 @@ class TrackerService:
 
         return SheetsLogResponse(
             success=bool(data.get("success")),
-            message=data.get("error") or "Logged to Google Sheets.",
+            message=data.get("error") or data.get("message") or "Logged to Google Sheets.",
             script_version=data.get("script_version"),
             mode=data.get("mode"),
             target_row=data.get("target_row"),
         )
+
+    def find_duplicate(self, *, company: str, role: str, link: str) -> dict[str, str] | None:
+        rows = self.list_rows()
+        target_link = self.canonicalize_job_link(link)
+        if target_link:
+            for existing in rows:
+                if existing.status not in STATUS_VALUES:
+                    continue
+                if self.canonicalize_job_link(existing.link) == target_link:
+                    return {
+                        "reason": "link",
+                        "company": existing.company_applied,
+                        "role": existing.role,
+                    }
+
+        target_company = self._normalize_match_text(company)
+        target_role = self._normalize_match_text(role)
+        for existing in rows:
+            if existing.status not in STATUS_VALUES:
+                continue
+            if (
+                self._normalize_match_text(existing.company_applied) == target_company
+                and self._roles_match(existing, target_role)
+            ):
+                return {
+                    "reason": "company_role",
+                    "company": existing.company_applied,
+                    "role": existing.role,
+                }
+        return None
+
+    def find_local_candidate(self, *, company: str, role: str, link: str) -> ApplicationRow | None:
+        rows = self.list_rows()
+        target_link = self.canonicalize_job_link(link)
+        if target_link:
+            for existing in rows:
+                if self.canonicalize_job_link(existing.link) == target_link:
+                    return existing
+
+        target_company = self._normalize_match_text(company)
+        target_role = self._normalize_match_text(role)
+        for existing in rows:
+            if (
+                self._normalize_match_text(existing.company_applied) == target_company
+                and self._roles_match(existing, target_role)
+            ):
+                return existing
+        return None
+
+    @staticmethod
+    def canonicalize_job_link(value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            return ""
+
+        parsed = urlsplit(text)
+        if not parsed.scheme or not parsed.netloc:
+            return text.rstrip("/").lower()
+
+        query = [
+            (key, item)
+            for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_") and key.lower() not in TRACKING_QUERY_KEYS
+        ]
+        return urlunsplit(
+            (
+                parsed.scheme.lower(),
+                parsed.netloc.lower(),
+                parsed.path.rstrip("/"),
+                urlencode(sorted(query)),
+                "",
+            )
+        )
+
+    @staticmethod
+    def _normalize_match_text(value: str) -> str:
+        return re.sub(r"\s+", " ", (value or "").strip()).casefold()
+
+    @classmethod
+    def _roles_match(cls, existing: ApplicationRow, target_role: str) -> bool:
+        existing_role = cls._normalize_match_text(existing.role)
+        if existing_role == target_role:
+            return True
+        if not existing.job_id:
+            return False
+        tracked_target = cls.format_role_for_tracking(target_role, existing.job_id)
+        return existing_role == cls._normalize_match_text(tracked_target)
 
     def add_row(self, payload: ApplicationRowCreateRequest) -> ApplicationRowResponse:
         now = datetime.now(UTC).isoformat()
@@ -112,11 +240,11 @@ class TrackerService:
                     applied_using = excluded.applied_using,
                     status = excluded.status,
                     link = excluded.link,
-                    job_id = excluded.job_id,
-                    base_match_percent = excluded.base_match_percent,
-                    tailored_match_percent = excluded.tailored_match_percent,
-                    resume_version_used = excluded.resume_version_used,
-                    notes = excluded.notes,
+                    job_id = COALESCE(excluded.job_id, application_rows.job_id),
+                    base_match_percent = COALESCE(excluded.base_match_percent, application_rows.base_match_percent),
+                    tailored_match_percent = COALESCE(excluded.tailored_match_percent, application_rows.tailored_match_percent),
+                    resume_version_used = COALESCE(excluded.resume_version_used, application_rows.resume_version_used),
+                    notes = COALESCE(excluded.notes, application_rows.notes),
                     updated_at = excluded.updated_at
                 """,
                 (

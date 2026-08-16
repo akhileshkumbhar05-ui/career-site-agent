@@ -1,4 +1,4 @@
-// CareerSite Agent - Google Apps Script v15
+// CareerSite Agent - Google Apps Script v16
 // Current Jobs Applied layout:
 //   A Date
 //   B Company Applied
@@ -15,7 +15,7 @@
 //   status_update - update Status for existing Jobs Applied rows
 //   email_action  - update/log job email actions in Email Actions sheet
 
-const SCRIPT_VERSION = "v15";
+const SCRIPT_VERSION = "v16";
 const JOBS_APPLIED_SHEET = "Jobs Applied";
 const CONNECTIONS_SHEET = "Connections";
 const EMAIL_ACTIONS_SHEET = "Email Actions";
@@ -50,6 +50,25 @@ const JOB_COLS = {
 const JOB_DROPDOWN_COLS = [
   JOB_COLS.appliedUsing,
   JOB_COLS.status
+];
+const APPLIED_USING_VALUES = [
+  "LinkedIn",
+  "Indeed",
+  "Company Website",
+  "ZipRecruiter",
+  "Jobright.ai"
+];
+const APPLICATION_STATUS_VALUES = [
+  "Applied",
+  "Screening Interview Call",
+  "Technical Interview Call",
+  "HR Interview Call",
+  "Rejection",
+  "Accepted/Offered Job",
+  "Not Yet Applied Due to Technical Issue",
+  "Cleared Automated Review",
+  "ATS Rejection / Scope for Direct Contact",
+  "Initial Rejection - Subject to further details"
 ];
 
 function doGet(e) {
@@ -114,14 +133,50 @@ function handleJobsApplied(data) {
     return jsonResponse({ success: false, script_version: SCRIPT_VERSION, error: "Missing company or role" });
   }
 
+  const status = data.technical_issue === true
+    ? "Not Yet Applied Due to Technical Issue"
+    : (data.status || "Applied");
+  const appliedUsing = data.applied_using || "Company Website";
+
+  if (status === "Applied" && data.human_confirmed_submission !== true) {
+    return jsonResponse({
+      success: false,
+      script_version: SCRIPT_VERSION,
+      error: "Cannot write Status=Applied without manual submission confirmation."
+    });
+  }
+
+  if (APPLICATION_STATUS_VALUES.indexOf(status) === -1) {
+    return jsonResponse({ success: false, script_version: SCRIPT_VERSION, error: "Invalid Status value" });
+  }
+
+  if (APPLIED_USING_VALUES.indexOf(appliedUsing) === -1) {
+    return jsonResponse({ success: false, script_version: SCRIPT_VERSION, error: "Invalid Applied Using value" });
+  }
+
+  const duplicate = findExistingJobRow(sheet, data.link || "", company, role);
+  if (duplicate) {
+    return jsonResponse({
+      success: true,
+      script_version: SCRIPT_VERSION,
+      target: "jobs_applied",
+      mode: "duplicate_skipped",
+      target_row: duplicate.row,
+      duplicate_reason: duplicate.reason,
+      company: duplicate.company,
+      role: duplicate.role,
+      message: "Duplicate row found; existing manual row was preserved."
+    });
+  }
+
   const rowValues = [[
     getApplicationDate(data),
     company,
     role,
     data.salary || "N/A",
     data.job_posted_on || "Unknown",
-    data.applied_using || "Company Website",
-    data.status || "Applied",
+    appliedUsing,
+    status,
     data.link || ""
   ]];
 
@@ -389,6 +444,86 @@ function findFirstReusableJobRow(sheet) {
   }
 
   return lastRow + 1;
+}
+
+function findExistingJobRow(sheet, link, company, role) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= HEADER_ROW) {
+    return null;
+  }
+
+  const values = sheet.getRange(HEADER_ROW + 1, 1, lastRow - HEADER_ROW, JOB_COL_COUNT).getValues();
+  const targetLink = normalizeJobLink(link);
+  if (targetLink) {
+    for (let i = 0; i < values.length; i++) {
+      const existingLink = normalizeJobLink(values[i][JOB_COLS.link - 1]);
+      if (existingLink && existingLink === targetLink) {
+        return existingJobMatch(values[i], HEADER_ROW + 1 + i, "link");
+      }
+    }
+  }
+
+  const targetCompany = normalizeJobIdentity(company);
+  const targetRole = normalizeJobIdentity(role);
+  for (let i = 0; i < values.length; i++) {
+    const existingCompany = normalizeJobIdentity(values[i][JOB_COLS.company - 1]);
+    const existingRole = normalizeJobIdentity(values[i][JOB_COLS.role - 1]);
+    if (existingCompany === targetCompany && existingRole === targetRole) {
+      return existingJobMatch(values[i], HEADER_ROW + 1 + i, "company_role");
+    }
+  }
+
+  return null;
+}
+
+function existingJobMatch(row, rowNumber, reason) {
+  return {
+    row: rowNumber,
+    reason: reason,
+    company: String(row[JOB_COLS.company - 1] || "").trim(),
+    role: String(row[JOB_COLS.role - 1] || "").trim()
+  };
+}
+
+function normalizeJobLink(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) {
+    return "";
+  }
+
+  const withoutFragment = text.split("#")[0];
+  const parts = withoutFragment.split("?");
+  const base = parts[0].replace(/\/+$/, "");
+  if (parts.length === 1) {
+    return base;
+  }
+
+  const kept = parts.slice(1).join("?").split("&").filter(function (pair) {
+    const key = safeDecodeQueryKey(pair.split("=")[0] || "");
+    return key.indexOf("utm_") !== 0 && [
+      "__jvsd",
+      "__jvst",
+      "gh_src",
+      "lever-source",
+      "ref",
+      "referrer",
+      "source"
+    ].indexOf(key) === -1;
+  }).sort();
+
+  return kept.length > 0 ? base + "?" + kept.join("&") : base;
+}
+
+function safeDecodeQueryKey(value) {
+  try {
+    return decodeURIComponent(value).toLowerCase();
+  } catch (error) {
+    return String(value || "").toLowerCase();
+  }
+}
+
+function normalizeJobIdentity(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function copyJobRowTemplate(sheet, sourceRow, targetRow) {

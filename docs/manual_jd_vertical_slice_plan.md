@@ -24,6 +24,6 @@ This slice keeps the existing architecture intact and adds a practical paste-JD 
 ## Next Build Steps
 
 1. Replace rule-based JD extraction with an optional LLM parser adapter behind the same response schema.
-2. Connect the confirmed write path to the configured Google Apps Script when credentials are present.
+2. Surface the `/copilot/prepare-log` proposal and confirmation state in the batch inbox UI.
 3. Add browser extension handoff for the generated safe apply plan.
 4. Add official ATS feed ingestion for Greenhouse, Ashby, Lever, Workday, and selected company APIs.
