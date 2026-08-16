@@ -110,6 +110,9 @@ Manual application loop endpoints:
 - `GET /application-loop/items/{loop_id}/tailoring/draft`
 - `POST /application-loop/items/{loop_id}/tailoring/preview`
 - `POST /application-loop/items/{loop_id}/tailoring/approve`
+- `POST /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/download/{docx|pdf}`
 
 Agent CLI:
 ```bash

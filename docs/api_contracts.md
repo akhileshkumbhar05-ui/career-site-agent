@@ -29,8 +29,11 @@
 - `GET /application-loop/items/{loop_id}/tailoring/draft`
 - `POST /application-loop/items/{loop_id}/tailoring/preview`
 - `POST /application-loop/items/{loop_id}/tailoring/approve`
+- `POST /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/download/{docx|pdf}`
 
-Tailoring draft and preview operations do not create resume files. Approval persists the reviewed selection for the later export handoff.
+Tailoring draft and preview operations do not create resume files. Approval persists the reviewed selection for the later export handoff. The export command accepts only output settings and an explicit human confirmation; resume content is loaded from the current persisted approval. Exporting is deterministic and does not call Claude.
 
 ## Autofill
 - `POST /autofill/context`

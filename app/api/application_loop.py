@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from app.dependencies import get_application_loop_service
 from app.schemas.application_loop import (
@@ -13,6 +14,8 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringApproveResponse,
     ApplicationLoopTailoringDraftRequest,
     ApplicationLoopTailoringDraftResponse,
+    ApplicationLoopTailoringExportRequest,
+    ApplicationLoopTailoringExportResponse,
 )
 from app.schemas.tailoring_review import TailoringPreviewRenderResponse, TailoringReviewSelection
 from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
@@ -146,3 +149,62 @@ def approve_tailoring_draft(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/tailoring/export",
+    response_model=ApplicationLoopTailoringExportResponse,
+)
+def export_approved_tailoring(
+    loop_id: str,
+    payload: ApplicationLoopTailoringExportRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringExportResponse:
+    try:
+        return service.export_approved_tailoring(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=422, detail=f"Could not write export files: {exc}") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/items/{loop_id}/tailoring/export",
+    response_model=ApplicationLoopTailoringExportResponse,
+)
+def get_tailoring_export(
+    loop_id: str,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringExportResponse:
+    try:
+        return service.get_tailoring_export(loop_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/items/{loop_id}/tailoring/download/{file_format}")
+def download_tailoring_export(
+    loop_id: str,
+    file_format: str,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> FileResponse:
+    try:
+        path = service.download_tailoring_export(loop_id, file_format)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    media_type = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        if file_format == "docx"
+        else "application/pdf"
+    )
+    return FileResponse(path, media_type=media_type, filename=path.name)

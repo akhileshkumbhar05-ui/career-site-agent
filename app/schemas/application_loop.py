@@ -99,6 +99,28 @@ class ApplicationLoopTailoringApproval(BaseModel):
     approved_at: str
 
 
+class ApplicationLoopExportHandoff(BaseModel):
+    version: int = Field(ge=1)
+    draft_id: str
+    exported_at: str
+    output_root_override: str = ""
+    render_pdf_requested: bool = True
+    quality_passed: bool
+    quality_checks: list[dict] = Field(default_factory=list)
+    docx_ready: bool
+    pdf_ready: bool
+    pdf_error: str = ""
+    docx_download_path: str
+    pdf_download_path: str = ""
+    prepared_resume_docx_path: str
+    prepared_resume_pdf_path: str = ""
+    packet_folder_path: str = ""
+    prepared_apply_plan_path: str = ""
+    jd_path: str = ""
+    cover_letter_path: str = ""
+    files_written: list[str] = Field(default_factory=list)
+
+
 class ApplicationLoopItem(BaseModel):
     loop_id: str
     company: str
@@ -115,6 +137,7 @@ class ApplicationLoopItem(BaseModel):
     tailoring_draft: ApplicationLoopTailoringDraftRef | None = None
     tailoring_history: list[ApplicationLoopTailoringDraftRef] = Field(default_factory=list)
     tailoring_approval: ApplicationLoopTailoringApproval | None = None
+    export_handoff: ApplicationLoopExportHandoff | None = None
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
@@ -217,4 +240,16 @@ class ApplicationLoopTailoringApproveResponse(BaseModel):
     loop_item: ApplicationLoopItem
     draft_id: str
     resume_preview_html: str
+    message: str
+
+
+class ApplicationLoopTailoringExportRequest(BaseModel):
+    output_root_override: str = Field(default="", max_length=4000)
+    render_pdf: bool = True
+    human_confirmed_export: bool = False
+
+
+class ApplicationLoopTailoringExportResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    handoff: ApplicationLoopExportHandoff
     message: str

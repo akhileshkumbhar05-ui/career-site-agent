@@ -1488,6 +1488,138 @@ input[type="range"]::-moz-range-thumb {
   padding: 0.85rem 0;
 }
 
+.tailoring-review-section textarea[readonly],
+.tailoring-review-section input:disabled,
+.toggle-control.disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.tailoring-export-section {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem 0;
+}
+
+.tailoring-export-section .tailoring-review-heading > div {
+  min-width: 0;
+}
+
+.tailoring-export-section .tailoring-review-heading > div > span,
+.tailoring-output-root > span {
+  color: var(--muted-2);
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tailoring-export-section .tailoring-review-heading h3 {
+  font-size: 0.88rem;
+  margin-top: 0.18rem;
+}
+
+.tailoring-output-root {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.tailoring-output-root input {
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  min-height: 40px;
+  outline: 0;
+  padding: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.tailoring-output-root input:focus {
+  border-color: var(--line-strong);
+}
+
+.tailoring-export-command {
+  align-items: center;
+  display: flex;
+  gap: 0.7rem;
+  justify-content: space-between;
+}
+
+.tailoring-export-command .icon-button {
+  flex: 0 1 auto;
+}
+
+.tailoring-export-result {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.75rem;
+}
+
+.tailoring-download-actions {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tailoring-download-actions .icon-button {
+  justify-content: center;
+  min-width: 0;
+}
+
+.tailoring-download-actions .ghost:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.tailoring-export-path {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.7rem;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tailoring-export-path svg {
+  flex: 0 0 auto;
+}
+
+.tailoring-export-path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tailoring-export-error {
+  color: var(--amber);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tailoring-quality-checks summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.tailoring-quality-checks p {
+  font-size: 0.7rem;
+  margin-top: 0.35rem;
+}
+
+.tailoring-quality-checks .failed {
+  color: var(--amber);
+}
+
+.tailoring-quality-checks .passed {
+  color: var(--green);
+}
+
 .tailoring-review-actions > .icon-button,
 .tailoring-revision-panel > .icon-button {
   width: 100%;
@@ -2075,6 +2207,16 @@ th {
   .tailoring-count-grid,
   .tailoring-emphasis {
     grid-template-columns: 1fr;
+  }
+
+  .tailoring-export-command {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tailoring-export-command .icon-button,
+  .tailoring-download-actions {
+    width: 100%;
   }
 
   .tailoring-modal-backdrop {

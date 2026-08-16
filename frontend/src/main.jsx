@@ -9,10 +9,12 @@ import {
   ChevronUp,
   CircleHelp,
   Clock3,
+  Download,
   ExternalLink,
   Eye,
   FilePenLine,
   FileText,
+  FolderOpen,
   Gauge,
   Inbox,
   Link2,
@@ -340,10 +342,10 @@ function Toolbar({ feed, filters, setFilters }) {
   );
 }
 
-function Toggle({ label, checked, onChange }) {
+function Toggle({ label, checked, onChange, disabled = false }) {
   return (
-    <label className="toggle-control">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    <label className={`toggle-control ${disabled ? "disabled" : ""}`}>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled} />
       <span />
       <strong>{label}</strong>
     </label>
@@ -437,6 +439,8 @@ function BatchInboxWorkspace() {
   const [draftReview, setDraftReview] = React.useState(null);
   const [reviewSelection, setReviewSelection] = React.useState(null);
   const [approvalNote, setApprovalNote] = React.useState("");
+  const [exportRoot, setExportRoot] = React.useState("");
+  const [renderExportPdf, setRenderExportPdf] = React.useState(true);
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
@@ -624,10 +628,16 @@ function BatchInboxWorkspace() {
 
   function showDraftReview(result) {
     setDraftReview(result);
-    setReviewSelection(reviewSelectionFromDraft(result.draft));
+    setReviewSelection(
+      result.loop_item?.tailoring_approval?.review
+        ? structuredClone(result.loop_item.tailoring_approval.review)
+        : reviewSelectionFromDraft(result.draft)
+    );
     setTailoringPreferences(newTailoringPreferences(result.draft.preferences));
     setRevisionReason("");
     setApprovalNote(result.loop_item?.tailoring_approval?.note || "");
+    setExportRoot(result.loop_item?.export_handoff?.output_root_override || "");
+    setRenderExportPdf(result.loop_item?.export_handoff?.render_pdf_requested ?? true);
   }
 
   async function createTailoringDraft(item) {
@@ -712,6 +722,27 @@ function BatchInboxWorkspace() {
       await loadInbox();
     } catch (err) {
       setError(err.message || "Could not approve this tailoring draft.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function exportApprovedTailoring() {
+    if (!draftReview?.loop_item?.tailoring_approval) return;
+    const loopId = draftReview.loop_item.loop_id;
+    setBusy(`export:${loopId}`);
+    setError("");
+    try {
+      const result = await apiPost(`/application-loop/items/${loopId}/tailoring/export`, {
+        output_root_override: exportRoot.trim(),
+        render_pdf: renderExportPdf,
+        human_confirmed_export: true
+      });
+      setDraftReview((current) => ({ ...current, loop_item: result.loop_item }));
+      setMessage(result.message);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not generate the approved resume files.");
     } finally {
       setBusy("");
     }
@@ -908,6 +939,7 @@ function BatchInboxWorkspace() {
                   {fit?.overridden && <span>Human override</span>}
                   {item.tailoring_draft && <span>Draft v{item.tailoring_draft.version}</span>}
                   {item.revision_count > 0 && <span>{item.revision_count} revision{item.revision_count === 1 ? "" : "s"}</span>}
+                  {item.export_handoff && <span>Export v{item.export_handoff.version}</span>}
                 </div>
                 {item.job_url && (
                   <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
@@ -932,6 +964,7 @@ function BatchInboxWorkspace() {
                     <span>{tailoringEngineLabel(item.tailoring_draft)}</span>
                     {item.tailoring_draft.llm_usage?.output_tokens > 0 && <span>{item.tailoring_draft.llm_usage.output_tokens} output tokens</span>}
                     {item.state === "approved_for_apply" && <span className="tag good">Approved</span>}
+                    {item.export_handoff && <span className={`tag ${item.export_handoff.quality_passed ? "good" : "warn"}`}>{item.export_handoff.quality_passed ? "Files ready" : "Check files"}</span>}
                   </div>
                 )}
 
@@ -968,8 +1001,20 @@ function BatchInboxWorkspace() {
                   {hasTailoringDraft && (
                     <button className="icon-button primary" onClick={() => openTailoringDraft(item)} disabled={Boolean(busy)}>
                       {busy === `draft:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
-                      <span>{item.state === "approved_for_apply" ? "Review approved" : "Review resume"}</span>
+                      <span>{item.export_handoff ? "Open handoff" : item.state === "approved_for_apply" ? "Review & export" : "Review resume"}</span>
                     </button>
+                  )}
+                  {item.export_handoff?.docx_ready && (
+                    <a className="icon-button secondary" href={`${API_BASE}${item.export_handoff.docx_download_path}`} download>
+                      <Download size={16} />
+                      <span>DOCX</span>
+                    </a>
+                  )}
+                  {item.export_handoff?.pdf_ready && (
+                    <a className="icon-button secondary" href={`${API_BASE}${item.export_handoff.pdf_download_path}`} download>
+                      <Download size={16} />
+                      <span>PDF</span>
+                    </a>
                   )}
                   {item.state === "fit_checked" && hasCompleteFit && (
                     <button className="icon-button ghost compact-icon" title="Recheck Fit Gate; may use Claude" onClick={() => runFitGate([item.loop_id], true)} disabled={Boolean(busy)}>
@@ -1052,6 +1097,11 @@ function BatchInboxWorkspace() {
           busy={busy}
           onRefresh={refreshTailoringPreview}
           onApprove={approveTailoringDraft}
+          exportRoot={exportRoot}
+          onExportRootChange={setExportRoot}
+          renderExportPdf={renderExportPdf}
+          onRenderExportPdfChange={setRenderExportPdf}
+          onExport={exportApprovedTailoring}
           onRegenerate={() => createTailoringDraft(draftReview.loop_item)}
           onClose={() => setDraftReview(null)}
         />
@@ -1180,11 +1230,20 @@ function TailoringReviewModal({
   busy,
   onRefresh,
   onApprove,
+  exportRoot,
+  onExportRootChange,
+  renderExportPdf,
+  onRenderExportPdfChange,
+  onExport,
   onRegenerate,
   onClose
 }) {
   const { draft, loop_item: loopItem } = result;
-  const approved = loopItem.state === "approved_for_apply";
+  const approved = Boolean(
+    loopItem.tailoring_approval
+    && loopItem.tailoring_approval.draft_id === loopItem.tailoring_draft?.draft_id
+  );
+  const handoff = loopItem.export_handoff;
   const usage = draft.llm_usage || {};
 
   React.useEffect(() => {
@@ -1243,9 +1302,9 @@ function TailoringReviewModal({
             <section className="tailoring-review-section">
               <div className="tailoring-review-heading">
                 <h3>Summary</h3>
-                <Toggle label="Use" checked={selection.summary_accepted} onChange={(checked) => updateSelection("summary_accepted", checked)} />
+                <Toggle label="Use" checked={selection.summary_accepted} onChange={(checked) => updateSelection("summary_accepted", checked)} disabled={approved} />
               </div>
-              <textarea value={selection.summary_text} onChange={(event) => updateSelection("summary_text", event.target.value)} maxLength={1400} />
+              <textarea value={selection.summary_text} onChange={(event) => updateSelection("summary_text", event.target.value)} maxLength={1400} readOnly={approved} />
             </section>
 
             {(draft.bullets || []).length > 0 && (
@@ -1255,11 +1314,11 @@ function TailoringReviewModal({
                   {draft.bullets.map((bullet, index) => (
                     <label className="tailoring-bullet-review" key={bullet.bullet_id}>
                       <span className="tailoring-bullet-label">
-                        <input type="checkbox" checked={selection.bullets[index]?.accepted ?? true} onChange={(event) => updateBullet(index, { accepted: event.target.checked })} />
+                        <input type="checkbox" checked={selection.bullets[index]?.accepted ?? true} onChange={(event) => updateBullet(index, { accepted: event.target.checked })} disabled={approved} />
                         <strong>{bullet.item_label || bullet.section}</strong>
                         <em>{bullet.section}</em>
                       </span>
-                      <textarea value={selection.bullets[index]?.text || ""} onChange={(event) => updateBullet(index, { text: event.target.value })} maxLength={700} />
+                      <textarea value={selection.bullets[index]?.text || ""} onChange={(event) => updateBullet(index, { text: event.target.value })} maxLength={700} readOnly={approved} />
                     </label>
                   ))}
                 </div>
@@ -1272,7 +1331,7 @@ function TailoringReviewModal({
                 <div className="tailoring-choice-list">
                   {draft.projects.map((project) => (
                     <label key={project.project_id}>
-                      <input type="checkbox" checked={(selection.project_ids || []).includes(project.project_id)} onChange={(event) => toggleSelected("project_ids", project.project_id, event.target.checked, 3)} />
+                      <input type="checkbox" checked={(selection.project_ids || []).includes(project.project_id)} onChange={(event) => toggleSelected("project_ids", project.project_id, event.target.checked, 3)} disabled={approved} />
                       <span>{project.name}</span>
                     </label>
                   ))}
@@ -1286,7 +1345,7 @@ function TailoringReviewModal({
                 <div className="tailoring-choice-list">
                   {draft.publications.map((paper) => (
                     <label key={paper.publication_id}>
-                      <input type="checkbox" checked={(selection.publication_ids || []).includes(paper.publication_id)} onChange={(event) => toggleSelected("publication_ids", paper.publication_id, event.target.checked, 2)} />
+                      <input type="checkbox" checked={(selection.publication_ids || []).includes(paper.publication_id)} onChange={(event) => toggleSelected("publication_ids", paper.publication_id, event.target.checked, 2)} disabled={approved} />
                       <span>{paper.title}</span>
                     </label>
                   ))}
@@ -1297,16 +1356,16 @@ function TailoringReviewModal({
             <section className="tailoring-review-section">
               <h3>Bullets per subsection</h3>
               <div className="tailoring-count-grid">
-                <label><span>Experience</span><input type="number" min="0" max="50" value={selection.bullet_counts.experience_per_role} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, experience_per_role: Number(event.target.value) })} /></label>
-                <label><span>Projects</span><input type="number" min="0" max="50" value={selection.bullet_counts.projects_per_project} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, projects_per_project: Number(event.target.value) })} /></label>
-                <label><span>Research</span><input type="number" min="0" max="50" value={selection.bullet_counts.research_per_paper} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, research_per_paper: Number(event.target.value) })} /></label>
+                <label><span>Experience</span><input type="number" min="0" max="50" value={selection.bullet_counts.experience_per_role} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, experience_per_role: Number(event.target.value) })} disabled={approved} /></label>
+                <label><span>Projects</span><input type="number" min="0" max="50" value={selection.bullet_counts.projects_per_project} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, projects_per_project: Number(event.target.value) })} disabled={approved} /></label>
+                <label><span>Research</span><input type="number" min="0" max="50" value={selection.bullet_counts.research_per_paper} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, research_per_paper: Number(event.target.value) })} disabled={approved} /></label>
               </div>
             </section>
 
             {draft.connection_note && (
               <section className="tailoring-review-section">
                 <h3>Recruiter note</h3>
-                <textarea value={selection.connection_note} onChange={(event) => updateSelection("connection_note", event.target.value)} maxLength={299} />
+                <textarea value={selection.connection_note} onChange={(event) => updateSelection("connection_note", event.target.value)} maxLength={299} readOnly={approved} />
               </section>
             )}
 
@@ -1314,14 +1373,14 @@ function TailoringReviewModal({
               <section className="tailoring-review-section">
                 <div className="tailoring-review-heading">
                   <h3>Cover letter</h3>
-                  <Toggle label="Use" checked={selection.cover_letter_accepted} onChange={(checked) => updateSelection("cover_letter_accepted", checked)} />
+                  <Toggle label="Use" checked={selection.cover_letter_accepted} onChange={(checked) => updateSelection("cover_letter_accepted", checked)} disabled={approved} />
                 </div>
-                <textarea className="cover-letter-editor" value={selection.cover_letter_text} onChange={(event) => updateSelection("cover_letter_text", event.target.value)} maxLength={4000} />
+                <textarea className="cover-letter-editor" value={selection.cover_letter_text} onChange={(event) => updateSelection("cover_letter_text", event.target.value)} maxLength={4000} readOnly={approved} />
               </section>
             )}
 
             <div className="tailoring-review-actions">
-              <button className="icon-button secondary" onClick={onRefresh} disabled={Boolean(busy)}>
+              <button className="icon-button secondary" onClick={onRefresh} disabled={approved || Boolean(busy)}>
                 {String(busy).startsWith("preview:") ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
                 <span>Refresh preview</span>
               </button>
@@ -1338,6 +1397,74 @@ function TailoringReviewModal({
                 </>
               )}
             </div>
+
+            {approved && (
+              <section className="tailoring-export-section">
+                <div className="tailoring-review-heading">
+                  <div>
+                    <span>Approved handoff</span>
+                    <h3>Resume files</h3>
+                  </div>
+                  {handoff && <span className={`tag ${handoff.quality_passed ? "good" : "warn"}`}>{handoff.quality_passed ? "Quality passed" : "Review checks"}</span>}
+                </div>
+                <label className="tailoring-output-root">
+                  <span>Output root</span>
+                  <input
+                    value={exportRoot}
+                    onChange={(event) => onExportRootChange(event.target.value)}
+                    placeholder="Default resume folder"
+                    maxLength={4000}
+                  />
+                </label>
+                <div className="tailoring-export-command">
+                  <Toggle label="Render PDF" checked={renderExportPdf} onChange={onRenderExportPdfChange} />
+                  <button className="icon-button primary" onClick={onExport} disabled={Boolean(busy)}>
+                    {String(busy).startsWith("export:") ? <Loader2 className="spin" size={16} /> : <FolderOpen size={16} />}
+                    <span>{handoff ? "Regenerate files" : renderExportPdf ? "Generate DOCX + PDF" : "Generate DOCX"}</span>
+                  </button>
+                </div>
+
+                {handoff && (
+                  <div className="tailoring-export-result">
+                    <div className="tailoring-download-actions">
+                      {handoff.docx_ready && (
+                        <a className="icon-button secondary" href={`${API_BASE}${handoff.docx_download_path}`} download>
+                          <Download size={16} />
+                          <span>Download DOCX</span>
+                        </a>
+                      )}
+                      {handoff.pdf_ready && (
+                        <a className="icon-button secondary" href={`${API_BASE}${handoff.pdf_download_path}`} download>
+                          <Download size={16} />
+                          <span>Download PDF</span>
+                        </a>
+                      )}
+                      {loopItem.job_url && (
+                        <a className="icon-button ghost" href={loopItem.job_url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={16} />
+                          <span>Open application</span>
+                        </a>
+                      )}
+                    </div>
+                    <div className="tailoring-export-path" title={handoff.packet_folder_path || handoff.prepared_resume_docx_path}>
+                      <FolderOpen size={15} />
+                      <span>{handoff.packet_folder_path || handoff.prepared_resume_docx_path}</span>
+                    </div>
+                    {handoff.pdf_error && <p className="tailoring-export-error">{handoff.pdf_error}</p>}
+                    {(handoff.quality_checks || []).some((check) => check.passed === false) && (
+                      <details className="tailoring-quality-checks">
+                        <summary>Quality checks</summary>
+                        {(handoff.quality_checks || []).map((check, index) => (
+                          <p key={`${check.name || check.check || "check"}-${index}`} className={check.passed === false ? "failed" : "passed"}>
+                            {check.name || check.check || `Check ${index + 1}`}
+                          </p>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
             <details className="tailoring-revision-panel">
               <summary>Revise with Claude</summary>

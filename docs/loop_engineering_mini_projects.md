@@ -221,6 +221,8 @@ Likely files:
 
 ### 5. Export Handoff Loop
 
+Implementation status: shipped as an approval-gated deterministic export and download handoff.
+
 User payoff:
 - After approval, generate DOCX and PDF locally so Word Online becomes optional instead of mandatory.
 
@@ -232,6 +234,21 @@ Acceptance criteria:
 - Preserve a stable output folder per company and role.
 - Include the JD, tailored resume, apply plan, and optional cover letter.
 - Show download links in Third Eye.
+
+Implemented behavior:
+- Only the current persisted approval can be exported; the request accepts output location, PDF preference, and explicit human confirmation, but no resume content.
+- DOCX is always generated. PDF is generated on request through the existing local Edge renderer.
+- The packet keeps the JD, apply plan, resume HTML, quality metadata, and optional approved cover letter beside the resume files.
+- The application-loop item persists export version, paths, quality checks, PDF errors, and download routes. Reopening and downloading do not regenerate files.
+- A chosen output root still preserves the company and role folder structure. Leaving it blank uses the configured resume directory.
+- Starting a new Claude revision clears both the old approval and export handoff.
+- The Batch Inbox shows the approved handoff, quality state, output folder, direct DOCX/PDF downloads, and the canonical ATS link.
+- Export is deterministic and consumes no Claude tokens.
+
+Endpoints:
+- `POST /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/export`
+- `GET /application-loop/items/{loop_id}/tailoring/download/{docx|pdf}`
 
 Likely files:
 - `app/services/application_packet_export_service.py`

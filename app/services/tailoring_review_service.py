@@ -274,8 +274,12 @@ class TailoringReviewService:
             prepared_resume_docx_path=export.tailored_resume_docx_path,
             prepared_resume_pdf_path=export.tailored_resume_pdf_path or "",
             prepared_apply_plan_path=export.apply_plan_path,
+            packet_folder_path=export.packet_folder_path,
+            jd_path=export.jd_path,
             apply_url=job["url"],
             cover_letter_path=export.cover_letter_path,
+            files_written=export.files_written,
+            pdf_error=export.pdf_error,
             message="Final resume rendered locally. Use Download DOCX or Download PDF to choose a save location.",
         )
 

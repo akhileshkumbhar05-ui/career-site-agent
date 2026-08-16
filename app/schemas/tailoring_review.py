@@ -94,8 +94,12 @@ class TailoringFinalizeResponse(BaseModel):
     prepared_resume_docx_path: str
     prepared_resume_pdf_path: str = ""
     prepared_apply_plan_path: str = ""
+    packet_folder_path: str = ""
+    jd_path: str = ""
     apply_url: str = ""
     cover_letter_path: str = ""
+    files_written: list[str] = Field(default_factory=list)
+    pdf_error: str = ""
     message: str
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 import json
+from pathlib import Path
 import re
 import sqlite3
 from typing import TYPE_CHECKING, Any
@@ -18,6 +19,7 @@ from app.schemas.application_loop import (
     ApplicationLoopBatchSummary,
     ApplicationLoopCreateRequest,
     ApplicationLoopEvent,
+    ApplicationLoopExportHandoff,
     ApplicationLoopFitGateOutcome,
     ApplicationLoopFitGateResponse,
     ApplicationLoopFitGateResult,
@@ -33,10 +35,13 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringDraftRef,
     ApplicationLoopTailoringDraftRequest,
     ApplicationLoopTailoringDraftResponse,
+    ApplicationLoopTailoringExportRequest,
+    ApplicationLoopTailoringExportResponse,
     ApplicationLoopTransitionRequest,
 )
 from app.schemas.tailoring_review import (
     TailoringDraftRequest,
+    TailoringFinalizeRequest,
     TailoringPreviewRenderResponse,
     TailoringReviewSelection,
 )
@@ -518,6 +523,7 @@ class ApplicationLoopService:
         updated.tailoring_draft = reference
         updated.tailoring_history.append(reference)
         updated.tailoring_approval = None
+        updated.export_handoff = None
         self._save_item(updated)
         return ApplicationLoopTailoringDraftResponse(loop_item=updated, draft=draft)
 
@@ -527,10 +533,16 @@ class ApplicationLoopService:
             raise RuntimeError("Tailoring review service is not configured.")
         if item.tailoring_draft is None:
             raise InvalidApplicationLoopTransition("This application does not have a tailoring draft yet.")
-        return ApplicationLoopTailoringDraftResponse(
-            loop_item=item,
-            draft=self.tailoring_review.get_draft(item.tailoring_draft.draft_id),
-        )
+        draft = self.tailoring_review.get_draft(item.tailoring_draft.draft_id)
+        if item.tailoring_approval and item.tailoring_approval.draft_id == draft.draft_id:
+            approved_preview = self.tailoring_review.render_preview(item.tailoring_approval.review)
+            draft = draft.model_copy(
+                update={
+                    "resume_preview_html": approved_preview.resume_preview_html,
+                    "message": "Approved tailoring review reopened without generating files.",
+                }
+            )
+        return ApplicationLoopTailoringDraftResponse(loop_item=item, draft=draft)
 
     def render_tailoring_preview(
         self,
@@ -574,6 +586,7 @@ class ApplicationLoopService:
             note=payload.approval_note.strip(),
             approved_at=self._now(),
         )
+        updated.export_handoff = None
         self._save_item(updated)
         return ApplicationLoopTailoringApproveResponse(
             loop_item=updated,
@@ -581,6 +594,118 @@ class ApplicationLoopService:
             resume_preview_html=preview.resume_preview_html,
             message=preview.message,
         )
+
+    def export_approved_tailoring(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopTailoringExportRequest,
+    ) -> ApplicationLoopTailoringExportResponse:
+        item = self.get_item(loop_id)
+        if self.tailoring_review is None:
+            raise RuntimeError("Tailoring review service is not configured.")
+        if not payload.human_confirmed_export:
+            raise InvalidApplicationLoopTransition(
+                "Export requires an explicit human confirmation after reviewing the approved resume."
+            )
+        if item.state not in {"approved_for_apply", "ats_opened"}:
+            raise InvalidApplicationLoopTransition(
+                f"Resume files cannot be generated from '{item.state}'. Approve the draft first."
+            )
+        if item.tailoring_draft is None or item.tailoring_approval is None:
+            raise InvalidApplicationLoopTransition("This application does not have an approved tailoring review.")
+        if item.tailoring_approval.draft_id != item.tailoring_draft.draft_id:
+            raise InvalidApplicationLoopTransition(
+                "The approved review does not match the current tailoring draft. Review it again before export."
+            )
+
+        finalized = self.tailoring_review.finalize(
+            TailoringFinalizeRequest(
+                **item.tailoring_approval.review.model_dump(),
+                output_root_override=payload.output_root_override.strip(),
+                render_pdf=payload.render_pdf,
+            )
+        )
+        version = (item.export_handoff.version if item.export_handoff else 0) + 1
+        handoff = ApplicationLoopExportHandoff(
+            version=version,
+            draft_id=item.tailoring_draft.draft_id,
+            exported_at=self._now(),
+            output_root_override=payload.output_root_override.strip(),
+            render_pdf_requested=payload.render_pdf,
+            quality_passed=finalized.quality_passed,
+            quality_checks=finalized.quality_checks,
+            docx_ready=finalized.docx_ready,
+            pdf_ready=finalized.pdf_ready,
+            pdf_error=finalized.pdf_error,
+            docx_download_path=f"/application-loop/items/{loop_id}/tailoring/download/docx",
+            pdf_download_path=(
+                f"/application-loop/items/{loop_id}/tailoring/download/pdf"
+                if finalized.pdf_ready
+                else ""
+            ),
+            prepared_resume_docx_path=finalized.prepared_resume_docx_path,
+            prepared_resume_pdf_path=finalized.prepared_resume_pdf_path,
+            packet_folder_path=finalized.packet_folder_path,
+            prepared_apply_plan_path=finalized.prepared_apply_plan_path,
+            jd_path=finalized.jd_path,
+            cover_letter_path=finalized.cover_letter_path,
+            files_written=finalized.files_written,
+        )
+        updated = item.model_copy(deep=True)
+        updated.export_handoff = handoff
+        updated.updated_at = handoff.exported_at
+        updated.history.append(
+            ApplicationLoopEvent(
+                from_state=item.state,
+                to_state=item.state,
+                actor="human",
+                note=(
+                    f"Export handoff v{version} generated from approved draft "
+                    f"{item.tailoring_draft.version}."
+                ),
+                occurred_at=handoff.exported_at,
+            )
+        )
+        self._save_item(updated)
+
+        if payload.render_pdf and not handoff.pdf_ready:
+            message = "DOCX is ready. PDF rendering needs attention before the PDF can be downloaded."
+        elif handoff.quality_passed:
+            message = "Approved resume files are ready for download and ATS handoff."
+        else:
+            message = "Resume files were generated, but the quality checks need review before applying."
+        return ApplicationLoopTailoringExportResponse(
+            loop_item=updated,
+            handoff=handoff,
+            message=message,
+        )
+
+    def get_tailoring_export(self, loop_id: str) -> ApplicationLoopTailoringExportResponse:
+        item = self.get_item(loop_id)
+        if item.export_handoff is None:
+            raise InvalidApplicationLoopTransition("This application does not have an export handoff yet.")
+        return ApplicationLoopTailoringExportResponse(
+            loop_item=item,
+            handoff=item.export_handoff,
+            message="Existing export handoff reopened without regenerating files.",
+        )
+
+    def download_tailoring_export(self, loop_id: str, file_format: str) -> Path:
+        item = self.get_item(loop_id)
+        if item.export_handoff is None:
+            raise FileNotFoundError("This application does not have exported resume files.")
+        handoff = item.export_handoff
+        if file_format == "docx" and handoff.docx_ready:
+            path = Path(handoff.prepared_resume_docx_path)
+        elif file_format == "pdf" and handoff.pdf_ready:
+            path = Path(handoff.prepared_resume_pdf_path)
+        elif file_format not in {"docx", "pdf"}:
+            raise FileNotFoundError(f"Unsupported resume format: {file_format}")
+        else:
+            raise FileNotFoundError(f"{file_format.upper()} file is not available.")
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"{file_format.upper()} export file no longer exists.")
+        return path
 
     @staticmethod
     def _validate_current_draft(item: ApplicationLoopItem, draft_id: str) -> None:

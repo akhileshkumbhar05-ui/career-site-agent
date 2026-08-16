@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_application_loop_service
@@ -7,6 +9,7 @@ from app.schemas.application_loop import (
     ApplicationLoopFitGateRunRequest,
     ApplicationLoopTailoringApproveRequest,
     ApplicationLoopTailoringDraftRequest,
+    ApplicationLoopTailoringExportRequest,
 )
 from app.schemas.resume import TailoringPreferences
 from app.schemas.tailoring_review import (
@@ -14,6 +17,7 @@ from app.schemas.tailoring_review import (
     TailoringDraftProject,
     TailoringDraftPublication,
     TailoringDraftResponse,
+    TailoringFinalizeResponse,
     TailoringPreviewRenderResponse,
 )
 from app.services.application_loop_service import (
@@ -47,10 +51,12 @@ class ApplyMatcher:
 
 
 class FakeTailoringReview:
-    def __init__(self) -> None:
+    def __init__(self, output_dir: Path) -> None:
         self.created = []
         self.approved = []
+        self.finalized = []
         self.drafts = {}
+        self.output_dir = output_dir
 
     def create_draft(self, payload):
         self.created.append(payload)
@@ -114,10 +120,56 @@ class FakeTailoringReview:
             message="Approved without generating files.",
         )
 
+    def finalize(self, payload):
+        self.finalized.append(payload)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        docx_path = self.output_dir / f"{payload.draft_id}.docx"
+        pdf_path = self.output_dir / f"{payload.draft_id}.pdf"
+        packet_path = self.output_dir / "application_packet"
+        packet_path.mkdir(exist_ok=True)
+        apply_plan_path = packet_path / "apply_plan.json"
+        jd_path = packet_path / "job_description.txt"
+        cover_letter_path = packet_path / "cover_letter.txt"
+        docx_path.write_bytes(b"test docx")
+        apply_plan_path.write_text("{}", encoding="utf-8")
+        jd_path.write_text("Saved job description", encoding="utf-8")
+        files_written = [str(docx_path), str(apply_plan_path), str(jd_path)]
+        if payload.cover_letter_accepted and payload.cover_letter_text.strip():
+            cover_letter_path.write_text(payload.cover_letter_text, encoding="utf-8")
+            files_written.append(str(cover_letter_path))
+        if payload.render_pdf:
+            pdf_path.write_bytes(b"%PDF test")
+            files_written.append(str(pdf_path))
+        return TailoringFinalizeResponse(
+            draft_id=payload.draft_id,
+            quality_passed=True,
+            quality_checks=[{"name": "grounded_metrics", "passed": True}],
+            docx_ready=True,
+            pdf_ready=payload.render_pdf,
+            docx_download_path=f"/autofill/tailoring/download/{payload.draft_id}/docx",
+            pdf_download_path=(
+                f"/autofill/tailoring/download/{payload.draft_id}/pdf"
+                if payload.render_pdf
+                else ""
+            ),
+            prepared_resume_docx_path=str(docx_path),
+            prepared_resume_pdf_path=str(pdf_path) if payload.render_pdf else "",
+            prepared_apply_plan_path=str(apply_plan_path),
+            packet_folder_path=str(packet_path),
+            jd_path=str(jd_path),
+            apply_url="https://jobs.example.com/tailor-data-analyst",
+            cover_letter_path=(
+                str(cover_letter_path)
+                if payload.cover_letter_accepted and payload.cover_letter_text.strip()
+                else ""
+            ),
+            files_written=files_written,
+            message="Files ready.",
+        )
 
 def _service(tmp_path, monkeypatch):
     monkeypatch.setenv("CAREER_SITE_AGENT_DB_PATH", str(tmp_path / "tailoring_loop.db"))
-    tailoring = FakeTailoringReview()
+    tailoring = FakeTailoringReview(tmp_path / "exports")
     service = ApplicationLoopService(matcher=ApplyMatcher(), tailoring_review=tailoring)
     imported = service.import_batch(
         ApplicationLoopBatchImportRequest.model_validate(
@@ -262,3 +314,126 @@ def test_application_tailoring_api_creates_reopens_and_approves(tmp_path, monkey
     assert reopened.status_code == 200
     assert approved.status_code == 200
     assert approved.json()["loop_item"]["state"] == "approved_for_apply"
+
+
+def test_export_handoff_requires_approval_and_explicit_human_confirmation(tmp_path, monkeypatch) -> None:
+    service, tailoring, loop_id = _service(tmp_path, monkeypatch)
+    draft = service.create_tailoring_draft(loop_id, ApplicationLoopTailoringDraftRequest())
+
+    try:
+        service.export_approved_tailoring(
+            loop_id,
+            ApplicationLoopTailoringExportRequest(human_confirmed_export=True),
+        )
+    except InvalidApplicationLoopTransition as exc:
+        assert "Approve the draft first" in str(exc)
+    else:
+        raise AssertionError("An unapproved draft must not generate files.")
+
+    service.approve_tailoring_draft(loop_id, _review_payload(draft.draft.draft_id))
+    try:
+        service.export_approved_tailoring(loop_id, ApplicationLoopTailoringExportRequest())
+    except InvalidApplicationLoopTransition as exc:
+        assert "explicit human confirmation" in str(exc)
+    else:
+        raise AssertionError("Export without human confirmation must be rejected.")
+
+    assert tailoring.finalized == []
+
+
+def test_export_handoff_uses_approved_selection_and_invalidates_on_revision(tmp_path, monkeypatch) -> None:
+    service, tailoring, loop_id = _service(tmp_path, monkeypatch)
+    draft = service.create_tailoring_draft(loop_id, ApplicationLoopTailoringDraftRequest())
+    approval = _review_payload(draft.draft.draft_id)
+    service.approve_tailoring_draft(loop_id, approval)
+
+    exported = service.export_approved_tailoring(
+        loop_id,
+        ApplicationLoopTailoringExportRequest(
+            output_root_override=str(tmp_path / "chosen-resume-root"),
+            render_pdf=True,
+            human_confirmed_export=True,
+        ),
+    )
+
+    assert len(tailoring.finalized) == 1
+    finalized_payload = tailoring.finalized[0]
+    assert finalized_payload.model_dump(exclude={"output_root_override", "render_pdf"}) == (
+        approval.model_dump(exclude={"approval_note"})
+    )
+    assert finalized_payload.output_root_override == str(tmp_path / "chosen-resume-root")
+    assert exported.loop_item.state == "approved_for_apply"
+    assert exported.handoff.version == 1
+    assert exported.handoff.docx_ready is True
+    assert exported.handoff.pdf_ready is True
+    assert exported.handoff.quality_passed is True
+    assert Path(exported.handoff.prepared_resume_docx_path).exists()
+    assert service.get_tailoring_export(loop_id).handoff == exported.handoff
+    assert service.download_tailoring_export(loop_id, "docx").exists()
+    assert service.download_tailoring_export(loop_id, "pdf").exists()
+    assert exported.loop_item.history[-1].to_state == "approved_for_apply"
+    assert "Export handoff v1" in exported.loop_item.history[-1].note
+
+    revised = service.create_tailoring_draft(
+        loop_id,
+        ApplicationLoopTailoringDraftRequest(
+            revision_reason="Strengthen the research evidence before exporting again."
+        ),
+    )
+    assert revised.loop_item.export_handoff is None
+    assert revised.loop_item.tailoring_approval is None
+
+
+def test_application_export_api_generates_reopens_and_downloads(tmp_path, monkeypatch) -> None:
+    service, _, loop_id = _service(tmp_path, monkeypatch)
+    draft = service.create_tailoring_draft(loop_id, ApplicationLoopTailoringDraftRequest())
+    service.approve_tailoring_draft(loop_id, _review_payload(draft.draft.draft_id))
+    app.dependency_overrides[get_application_loop_service] = lambda: service
+    try:
+        client = TestClient(app)
+        rejected = client.post(
+            f"/application-loop/items/{loop_id}/tailoring/export",
+            json={"render_pdf": True},
+        )
+        exported = client.post(
+            f"/application-loop/items/{loop_id}/tailoring/export",
+            json={"render_pdf": True, "human_confirmed_export": True},
+        )
+        reopened = client.get(f"/application-loop/items/{loop_id}/tailoring/export")
+        docx = client.get(f"/application-loop/items/{loop_id}/tailoring/download/docx")
+        pdf = client.get(f"/application-loop/items/{loop_id}/tailoring/download/pdf")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert rejected.status_code == 409
+    assert exported.status_code == 200
+    assert exported.json()["handoff"]["pdf_ready"] is True
+    assert reopened.status_code == 200
+    assert reopened.json()["handoff"]["version"] == 1
+    assert docx.status_code == 200
+    assert ".docx" in docx.headers["content-disposition"]
+    assert pdf.status_code == 200
+
+
+def test_export_handoff_can_generate_docx_without_pdf(tmp_path, monkeypatch) -> None:
+    service, _, loop_id = _service(tmp_path, monkeypatch)
+    draft = service.create_tailoring_draft(loop_id, ApplicationLoopTailoringDraftRequest())
+    service.approve_tailoring_draft(loop_id, _review_payload(draft.draft.draft_id))
+
+    exported = service.export_approved_tailoring(
+        loop_id,
+        ApplicationLoopTailoringExportRequest(
+            render_pdf=False,
+            human_confirmed_export=True,
+        ),
+    )
+
+    assert exported.handoff.docx_ready is True
+    assert exported.handoff.pdf_ready is False
+    assert exported.handoff.pdf_download_path == ""
+    try:
+        service.download_tailoring_export(loop_id, "pdf")
+    except FileNotFoundError as exc:
+        assert "PDF file is not available" in str(exc)
+    else:
+        raise AssertionError("A DOCX-only handoff must not expose a PDF download.")
