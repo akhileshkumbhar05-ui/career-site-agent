@@ -103,6 +103,9 @@ Manual application loop endpoints:
 - `POST /copilot/confirm-log`
 - `POST /application-loop/batches`
 - `GET /application-loop/items`
+- `POST /application-loop/fit-gate`
+- `PUT /application-loop/items/{loop_id}/jd`
+- `POST /application-loop/items/{loop_id}/fit-override`
 
 Agent CLI:
 ```bash

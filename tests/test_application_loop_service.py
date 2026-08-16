@@ -107,12 +107,19 @@ def test_revision_loop_counts_each_requested_redraft() -> None:
     assert item.history[-1].note == "Strengthen the EREV analysis metrics."
 
 
-def test_skipped_and_outreach_done_are_terminal_states() -> None:
+def test_only_a_human_can_restore_a_skipped_item() -> None:
     service, imported = _new_loop()
     skipped = _move(service, imported, "skipped", note="Role requires unrestricted work authorization.")
 
-    assert service.allowed_next_states("skipped") == ()
-    with pytest.raises(InvalidApplicationLoopTransition, match="Allowed next states: none"):
-        _move(service, skipped, "fit_checked")
+    assert service.allowed_next_states("skipped") == ("fit_checked",)
+    with pytest.raises(InvalidApplicationLoopTransition, match="Only a human"):
+        _move(service, skipped, "fit_checked", actor="agent", note="Agent changed its mind.")
 
+    restored = _move(service, skipped, "fit_checked", note="Human reviewed the JD and overrode the false skip.")
+    assert restored.state == "fit_checked"
+    assert restored.history[-1].actor == "human"
+
+
+def test_outreach_done_is_terminal() -> None:
+    service, _ = _new_loop()
     assert service.allowed_next_states("outreach_done") == ()

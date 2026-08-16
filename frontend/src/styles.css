@@ -937,6 +937,234 @@ input[type="range"]::-moz-range-thumb {
   min-height: 170px;
 }
 
+.fit-gate-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.8rem 0;
+}
+
+.fit-gate-toolbar > .icon-button {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.fit-gate-heading {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.fit-gate-heading svg {
+  color: var(--red);
+  flex: 0 0 auto;
+}
+
+.fit-gate-heading h3 {
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.fit-gate-heading span {
+  color: var(--muted-2);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-top: 0.2rem;
+  text-transform: uppercase;
+}
+
+.fit-gate-summary {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0.8rem 0;
+}
+
+.batch-inbox-item.fit-apply {
+  border-left: 3px solid var(--green);
+}
+
+.batch-inbox-item.fit-maybe {
+  border-left: 3px solid var(--amber);
+}
+
+.batch-inbox-item.fit-skip {
+  border-left: 3px solid var(--red);
+}
+
+.fit-tag-stack {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fit-result-panel {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 54px minmax(0, 1fr);
+  padding-top: 0.65rem;
+}
+
+.fit-result-panel > p {
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.fit-result-score {
+  display: grid;
+  justify-items: center;
+}
+
+.fit-result-score strong {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.fit-result-score span {
+  color: var(--muted-2);
+  font-size: 0.6rem;
+  font-weight: 800;
+  margin-top: 0.2rem;
+  text-transform: uppercase;
+}
+
+.fit-override-note {
+  background: var(--blue-soft);
+  border-left: 2px solid var(--blue);
+  color: #c9e2ff;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.6rem;
+}
+
+.fit-evidence {
+  border-top: 1px solid var(--line);
+  padding-top: 0.6rem;
+}
+
+.fit-evidence summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fit-evidence[open] summary {
+  color: #fff;
+  margin-bottom: 0.55rem;
+}
+
+.fit-signal {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.5rem;
+  padding-left: 0.55rem;
+}
+
+.fit-signal span,
+.fit-inline-editor label > span,
+.fit-review-panel label > span {
+  color: var(--muted-2);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fit-signal p {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.fit-item-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.fit-item-actions .icon-button:not(.compact-icon) {
+  min-height: 34px;
+  padding: 0.35rem 0.6rem;
+}
+
+.fit-inline-editor,
+.fit-review-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.65rem;
+}
+
+.fit-inline-editor label,
+.fit-review-panel label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.fit-inline-editor textarea,
+.fit-review-panel textarea {
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  line-height: 1.45;
+  min-height: 150px;
+  outline: 0;
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.fit-review-panel textarea {
+  min-height: 76px;
+}
+
+.fit-inline-editor textarea:focus,
+.fit-review-panel textarea:focus {
+  background: #3a3a3a;
+  border-color: var(--line-strong);
+}
+
+.fit-decision-control {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fit-decision-control button {
+  min-width: 0;
+  padding: 0.45rem 0.35rem;
+}
+
+.fit-decision-control .decision-apply {
+  border-color: rgba(70, 211, 105, 0.45);
+  color: var(--green);
+}
+
+.fit-decision-control .decision-maybe {
+  border-color: rgba(245, 197, 24, 0.45);
+  color: var(--amber);
+}
+
+.fit-decision-control .decision-skip {
+  border-color: rgba(229, 9, 20, 0.55);
+  color: #ff9ba1;
+}
+
 /* ---------- Content grid (list + detail) ---------- */
 .content-grid {
   display: grid;

@@ -42,18 +42,28 @@ class LLMMatchService:
         self.resume_path = Path(resume_path)
         self.ollama = LLMService()
 
-    def analyze(self, job: dict[str, Any], *, use_llm: bool = True) -> dict[str, Any]:
+    def analyze(
+        self,
+        job: dict[str, Any],
+        *,
+        use_llm: bool = True,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
         prepared = self._prepare_job(job)
         deterministic = self._deterministic_analysis(prepared)
 
-        if not use_llm:
+        if not use_llm or self._hard_blockers(deterministic["risks"]):
             return deterministic
 
         cache_path = self._cache_path(prepared)
-        if cache_path.exists():
+        if cache_path.exists() and not force_refresh:
             try:
                 payload = json.loads(cache_path.read_text(encoding="utf-8"))
-                return self._sanitize_analysis(prepared, deterministic, payload) if isinstance(payload, dict) else deterministic
+                if isinstance(payload, dict):
+                    cached = self._sanitize_analysis(prepared, deterministic, payload)
+                    cached["cache_hit"] = True
+                    return cached
+                return deterministic
             except json.JSONDecodeError:
                 pass
 
@@ -128,8 +138,10 @@ class LLMMatchService:
             "source": job["source"],
             "url": job.get("discovered_url") or "",
             "score": final_score,
+            "deterministic_score": final_score,
             "base_score": score.overall_score,
             "verdict": verdict,
+            "deterministic_verdict": verdict,
             "worth_applying": verdict in {"strong_match", "good_match"},
             "label": self._label(final_score, verdict),
             "one_line_reason": self._fallback_reason(final_score, gate.decision, gate.blockers, gate.reasons),
@@ -139,6 +151,7 @@ class LLMMatchService:
             "suggested_actions": self._suggested_actions(verdict),
             "sponsorship_note": self._sponsorship_note(gate.authorization_risk),
             "scoring_mode": "deterministic_fallback",
+            "cache_hit": False,
             "quality_gate_decision": gate.decision,
             "target_role_key": gate.role_key,
             "years_required": gate.years_required,
@@ -178,13 +191,15 @@ class LLMMatchService:
         if settings.anthropic_api_key and anthropic is not None:
             try:
                 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-                message = client.messages.create(
-                    model=settings.anthropic_model,
-                    max_tokens=1200,
-                    temperature=0.1,
-                    system=system,
-                    messages=[{"role": "user", "content": prompt}],
-                )
+                request: dict[str, Any] = {
+                    "model": settings.anthropic_model,
+                    "max_tokens": 1200,
+                    "system": system,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+                if settings.anthropic_model == "claude-sonnet-5":
+                    request["thinking"] = {"type": "disabled"}
+                message = client.messages.create(**request)
                 raw = message.content[0].text.strip()
                 result = self._parse_json(raw)
                 if result:
@@ -332,6 +347,7 @@ confidence number 0-1.
                 "sponsorship_note": str(llm_result.get("sponsorship_note") or deterministic["sponsorship_note"]),
                 "confidence": float(llm_result.get("confidence") or 0.72),
                 "scoring_mode": "llm",
+                "cache_hit": False,
                 "llm_model": str(llm_result.get("_llm_model") or settings.ollama_model),
                 "llm_provider": str(llm_result.get("_llm_provider") or settings.llm_provider),
                 "created_at": datetime.now(UTC).isoformat(),

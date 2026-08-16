@@ -54,23 +54,14 @@ def test_llm_can_override_soft_title_reject(tmp_path, monkeypatch) -> None:
 
 def test_llm_cannot_override_hard_seniority_blocker(tmp_path, monkeypatch) -> None:
     service = make_service(tmp_path)
+    llm_called = False
 
-    monkeypatch.setattr(
-        service,
-        "_call_llm",
-        lambda *_args, **_kwargs: {
-            "match_score": 95,
-            "verdict": "strong_match",
-            "worth_applying": True,
-            "one_line_reason": "The skills look strong.",
-            "strengths": ["Python", "ML"],
-            "gaps": [],
-            "risks": [],
-            "suggested_actions": ["Apply."],
-            "sponsorship_note": "No obvious blocker.",
-            "confidence": 0.9,
-        },
-    )
+    def fake_llm(*_args, **_kwargs):
+        nonlocal llm_called
+        llm_called = True
+        return {}
+
+    monkeypatch.setattr(service, "_call_llm", fake_llm)
 
     result = service.analyze(
         {
@@ -85,10 +76,11 @@ def test_llm_cannot_override_hard_seniority_blocker(tmp_path, monkeypatch) -> No
         use_llm=True,
     )
 
-    assert result["score"] == 74
-    assert result["verdict"] == "review"
+    assert result["score"] <= 59
+    assert result["verdict"] == "skip"
     assert result["worth_applying"] is False
     assert any("Seniority blocker" in risk for risk in result["risks"])
+    assert llm_called is False
 
 
 def test_llm_match_sanitizes_false_blocker_language(tmp_path, monkeypatch) -> None:
@@ -255,3 +247,57 @@ def test_match_scoring_prefers_ollama_when_configured(tmp_path, monkeypatch) -> 
     assert result["llm_provider"] == "ollama"
     assert result["llm_model"] == "llama3.2:1b"
     assert anthropic_called is False
+
+
+def test_sonnet_5_request_uses_supported_token_bounded_options(tmp_path, monkeypatch) -> None:
+    service = make_service(tmp_path)
+    captured = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            content = type(
+                "Content",
+                (),
+                {
+                    "text": (
+                        '{"match_score": 84, "verdict": "good_match", '
+                        '"worth_applying": true, "one_line_reason": "Grounded fit.", '
+                        '"strengths": ["Python"], "gaps": [], "risks": [], '
+                        '"suggested_actions": ["Review."], '
+                        '"sponsorship_note": "No obvious blocker.", "confidence": 0.8}'
+                    )
+                },
+            )()
+            return type("Message", (), {"content": [content]})()
+
+    class FakeAnthropicClient:
+        def __init__(self, **_kwargs) -> None:
+            self.messages = FakeMessages()
+
+    class FakeAnthropicModule:
+        Anthropic = FakeAnthropicClient
+
+    monkeypatch.setattr(llm_match_service, "anthropic", FakeAnthropicModule)
+    monkeypatch.setattr("app.services.llm_match_service.settings.llm_provider", "mock")
+    monkeypatch.setattr("app.services.llm_match_service.settings.anthropic_api_key", "test-key")
+    monkeypatch.setattr("app.services.llm_match_service.settings.anthropic_model", "claude-sonnet-5")
+    monkeypatch.setattr(service.ollama, "is_available", lambda: False)
+
+    result = service.analyze(
+        {
+            "job_id": "sonnet_5_options",
+            "company": "GoodCo",
+            "title": "Junior Data Scientist",
+            "jd_text": "Build Python and SQL machine learning models with one year of experience.",
+            "location": "United States",
+            "discovered_url": "https://example.com/sonnet-5-options",
+            "source": "pytest",
+        },
+        use_llm=True,
+    )
+
+    assert result["llm_model"] == "claude-sonnet-5"
+    assert captured["model"] == "claude-sonnet-5"
+    assert captured["thinking"] == {"type": "disabled"}
+    assert "temperature" not in captured

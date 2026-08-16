@@ -7,15 +7,20 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  CircleHelp,
   Clock3,
   ExternalLink,
   Eye,
+  FilePenLine,
   FileText,
+  Gauge,
   Inbox,
   Link2,
   Loader2,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Save,
   Search,
   ShieldAlert,
   Sparkles,
@@ -370,6 +375,11 @@ function BatchInboxWorkspace() {
   const [busy, setBusy] = React.useState("");
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState("");
+  const [useClaude, setUseClaude] = React.useState(true);
+  const [fitResult, setFitResult] = React.useState(null);
+  const [jdEditors, setJdEditors] = React.useState({});
+  const [reviewItemId, setReviewItemId] = React.useState("");
+  const [overrideNote, setOverrideNote] = React.useState("");
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
@@ -458,8 +468,97 @@ function BatchInboxWorkspace() {
     }
   }
 
+  async function runFitGate(loopIds, forceRefresh = false) {
+    if (!loopIds.length) return;
+    const busyKey = loopIds.length === 1 ? `fit:${loopIds[0]}` : "fit";
+    setBusy(busyKey);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost("/application-loop/fit-gate", {
+        loop_ids: loopIds,
+        use_llm: useClaude,
+        force_refresh: forceRefresh
+      });
+      setFitResult(result);
+      const summary = result.summary;
+      setMessage(`${summary.apply} apply, ${summary.maybe} maybe, ${summary.skip} skip, ${summary.needs_jd} need JD.`);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Fit Gate could not complete.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function openJdEditor(item) {
+    setJdEditors((current) => ({ ...current, [item.loop_id]: item.jd_text || "" }));
+    setReviewItemId("");
+    setOverrideNote("");
+  }
+
+  function closeJdEditor(loopId) {
+    setJdEditors((current) => {
+      const next = { ...current };
+      delete next[loopId];
+      return next;
+    });
+  }
+
+  async function saveJd(item) {
+    const jdText = String(jdEditors[item.loop_id] || "").trim();
+    if (jdText.length < 20) {
+      setError("The JD needs at least 20 characters.");
+      return;
+    }
+    setBusy(`jd:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      await apiPut(`/application-loop/items/${item.loop_id}/jd`, { jd_text: jdText });
+      closeJdEditor(item.loop_id);
+      setMessage("JD saved. This item is ready for Fit Gate.");
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not save this JD.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function openReview(item) {
+    setReviewItemId((current) => current === item.loop_id ? "" : item.loop_id);
+    setOverrideNote("");
+    setJdEditors({});
+  }
+
+  async function overrideFit(item, decision) {
+    if (overrideNote.trim().length < 3) {
+      setError("Add a short reason before overriding Fit Gate.");
+      return;
+    }
+    setBusy(`override:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      await apiPost(`/application-loop/items/${item.loop_id}/fit-override`, {
+        decision,
+        note: overrideNote.trim()
+      });
+      setReviewItemId("");
+      setOverrideNote("");
+      setMessage(`Decision changed to ${decision}.`);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not override this decision.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
   const readyCount = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim()).length;
+  const pendingFitIds = inbox.filter((item) => item.state === "imported").map((item) => item.loop_id);
 
   return (
     <section className="batch-workspace">
@@ -573,10 +672,25 @@ function BatchInboxWorkspace() {
         <div className="batch-section-header">
           <div>
             <h2>Application inbox</h2>
-            <span>{inbox.length} imported</span>
+            <span>{pendingFitIds.length} pending / {inbox.length} total</span>
           </div>
           <button className="icon-button ghost compact-icon" title="Reload inbox" onClick={loadInbox} disabled={Boolean(busy)}>
             {busy === "load" ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
+          </button>
+        </div>
+
+        <div className="fit-gate-toolbar">
+          <div className="fit-gate-heading">
+            <Gauge size={20} />
+            <div>
+              <h3>Fit Gate</h3>
+              <span>{pendingFitIds.length} ready to check</span>
+            </div>
+          </div>
+          <Toggle label="Use Claude" checked={useClaude} onChange={setUseClaude} />
+          <button className="icon-button primary" onClick={() => runFitGate(pendingFitIds)} disabled={!pendingFitIds.length || Boolean(busy)}>
+            {busy === "fit" ? <Loader2 className="spin" size={17} /> : <Gauge size={17} />}
+            <span>Run Fit Gate</span>
           </button>
         </div>
 
@@ -589,29 +703,136 @@ function BatchInboxWorkspace() {
           </div>
         )}
 
+        {fitResult && (
+          <div className="fit-gate-summary" aria-label="Latest Fit Gate summary">
+            <BatchStat label="Apply" value={fitResult.summary.apply} tone="good" />
+            <BatchStat label="Maybe" value={fitResult.summary.maybe} tone="warn" />
+            <BatchStat label="Skip" value={fitResult.summary.skip} tone="bad" />
+            <BatchStat label="Needs JD" value={fitResult.summary.needs_jd} />
+            <BatchStat label="Claude calls" value={fitResult.summary.llm_calls} />
+            <BatchStat label="Cached" value={fitResult.summary.cached} />
+          </div>
+        )}
+
         <div className="batch-inbox-list">
-          {inbox.length ? inbox.map((item) => (
-            <article className="batch-inbox-item" key={item.loop_id}>
-              <div className="batch-inbox-title">
-                <div>
-                  <h3>{item.role}</h3>
-                  <p>{item.company}</p>
+          {inbox.length ? inbox.map((item) => {
+            const fit = item.fit_gate;
+            const hasCompleteFit = fit?.evaluation_status === "complete";
+            const needsJd = !item.jd_text || item.jd_text.trim().length < 80 || fit?.evaluation_status === "needs_jd";
+            const jdEditorOpen = Object.prototype.hasOwnProperty.call(jdEditors, item.loop_id);
+            const reviewOpen = reviewItemId === item.loop_id;
+            const decisionTone = fit?.decision === "apply" ? "good" : fit?.decision === "skip" ? "bad" : "warn";
+            return (
+              <article className={`batch-inbox-item ${hasCompleteFit ? `fit-${fit.decision}` : ""}`} key={item.loop_id}>
+                <div className="batch-inbox-title">
+                  <div>
+                    <h3>{item.role}</h3>
+                    <p>{item.company}</p>
+                  </div>
+                  <div className="fit-tag-stack">
+                    {fit && <span className={`tag ${fit.evaluation_status === "needs_jd" ? "warn" : decisionTone}`}>{fit.evaluation_status === "needs_jd" ? "needs JD" : fit.decision}</span>}
+                    <span className="tag blue">{item.state.replaceAll("_", " ")}</span>
+                  </div>
                 </div>
-                <span className="tag blue">{item.state.replaceAll("_", " ")}</span>
-              </div>
-              <div className="batch-inbox-meta">
-                <span>{item.source}</span>
-                <span>{formatDateTime(item.created_at)}</span>
-                {item.jd_text && <span>JD saved</span>}
-              </div>
-              {item.job_url && (
-                <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
-                  <ExternalLink size={15} />
-                  <span>{item.job_url}</span>
-                </a>
-              )}
-            </article>
-          )) : (
+                <div className="batch-inbox-meta">
+                  <span>{item.source}</span>
+                  <span>{formatDateTime(item.created_at)}</span>
+                  {item.jd_text && <span>JD saved</span>}
+                  {fit?.used_llm && <span>{fit.llm_model || "Claude"}{fit.cache_hit ? " / cached" : ""}</span>}
+                  {fit && !fit.used_llm && <span>Deterministic</span>}
+                  {fit?.overridden && <span>Human override</span>}
+                </div>
+                {item.job_url && (
+                  <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
+                    <ExternalLink size={15} />
+                    <span>{item.job_url}</span>
+                  </a>
+                )}
+
+                {fit && (
+                  <section className="fit-result-panel">
+                    <div className="fit-result-score">
+                      <strong>{fit.score}</strong>
+                      <span>fit score</span>
+                    </div>
+                    <p>{fit.one_line_reason}</p>
+                  </section>
+                )}
+                {fit?.overridden && <p className="fit-override-note"><strong>Override:</strong> {fit.override_note}</p>}
+
+                {hasCompleteFit && (
+                  <details className="fit-evidence">
+                    <summary>Fit evidence</summary>
+                    <FitSignal label="Sponsorship" value={fit.sponsorship_note} />
+                    <FitSignal label="Seniority" value={fit.seniority_note} />
+                    <FitSignal label="Location" value={fit.location_note} />
+                    <FitSignal label="Title fit" value={fit.title_fit_note} />
+                    <FitSignal label="Skills fit" value={fit.skills_fit_note} />
+                  </details>
+                )}
+
+                <div className="fit-item-actions">
+                  {item.state === "imported" && needsJd && (
+                    <button className="icon-button secondary" onClick={() => jdEditorOpen ? closeJdEditor(item.loop_id) : openJdEditor(item)} disabled={Boolean(busy)}>
+                      <FilePenLine size={16} />
+                      <span>{jdEditorOpen ? "Close JD" : "Add JD"}</span>
+                    </button>
+                  )}
+                  {hasCompleteFit && (
+                    <button className="icon-button secondary" onClick={() => openReview(item)} disabled={Boolean(busy)}>
+                      <Eye size={16} />
+                      <span>{reviewOpen ? "Close review" : "Review"}</span>
+                    </button>
+                  )}
+                  {item.state === "fit_checked" && hasCompleteFit && (
+                    <button className="icon-button ghost compact-icon" title="Recheck Fit Gate; may use Claude" onClick={() => runFitGate([item.loop_id], true)} disabled={Boolean(busy)}>
+                      {busy === `fit:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <RotateCcw size={16} />}
+                    </button>
+                  )}
+                </div>
+
+                {jdEditorOpen && (
+                  <div className="fit-inline-editor">
+                    <label>
+                      <span>Full job description</span>
+                      <textarea
+                        value={jdEditors[item.loop_id] || ""}
+                        onChange={(event) => setJdEditors((current) => ({ ...current, [item.loop_id]: event.target.value }))}
+                        placeholder="Paste the complete JD"
+                      />
+                    </label>
+                    <button className="icon-button primary" onClick={() => saveJd(item)} disabled={(jdEditors[item.loop_id] || "").trim().length < 20 || Boolean(busy)}>
+                      {busy === `jd:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+                      <span>Save JD</span>
+                    </button>
+                  </div>
+                )}
+
+                {reviewOpen && (
+                  <div className="fit-review-panel">
+                    <label>
+                      <span>Override reason</span>
+                      <textarea value={overrideNote} onChange={(event) => setOverrideNote(event.target.value)} placeholder="Record why your judgment differs" />
+                    </label>
+                    <div className="fit-decision-control" aria-label="Override Fit Gate decision">
+                      <button className="decision-apply" onClick={() => overrideFit(item, "apply")} disabled={overrideNote.trim().length < 3 || Boolean(busy)}>
+                        <CheckCircle2 size={16} />
+                        <span>Apply</span>
+                      </button>
+                      <button className="decision-maybe" onClick={() => overrideFit(item, "maybe")} disabled={overrideNote.trim().length < 3 || Boolean(busy)}>
+                        <CircleHelp size={16} />
+                        <span>Maybe</span>
+                      </button>
+                      <button className="decision-skip" onClick={() => overrideFit(item, "skip")} disabled={overrideNote.trim().length < 3 || Boolean(busy)}>
+                        <XCircle size={16} />
+                        <span>Skip</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          }) : (
             <div className="batch-empty">
               <Inbox size={26} />
               <strong>Inbox is empty</strong>
@@ -628,6 +849,15 @@ function BatchStat({ label, value, tone = "neutral" }) {
     <div className={`batch-stat ${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function FitSignal({ label, value }) {
+  return (
+    <div className="fit-signal">
+      <span>{label}</span>
+      <p>{value || "Needs review."}</p>
     </div>
   );
 }
@@ -1063,6 +1293,15 @@ async function apiGet(path) {
 async function apiPost(path, body) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  return readResponse(response);
+}
+
+async function apiPut(path, body) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });

@@ -20,6 +20,8 @@ ApplicationLoopState = Literal[
 ]
 
 ApplicationLoopActor = Literal["human", "agent", "system"]
+FitGateDecision = Literal["apply", "maybe", "skip"]
+FitGateEvaluationStatus = Literal["complete", "needs_jd"]
 
 
 class ApplicationLoopCreateRequest(BaseModel):
@@ -47,6 +49,33 @@ class ApplicationLoopEvent(BaseModel):
     human_confirmed_submission: bool = False
 
 
+class ApplicationLoopFitGateResult(BaseModel):
+    decision: FitGateDecision
+    evaluation_status: FitGateEvaluationStatus = "complete"
+    score: int = Field(ge=0, le=100)
+    one_line_reason: str
+    strengths: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    suggested_actions: list[str] = Field(default_factory=list)
+    sponsorship_note: str = ""
+    seniority_note: str = ""
+    location_note: str = ""
+    title_fit_note: str = ""
+    skills_fit_note: str = ""
+    deterministic_score: int = Field(default=0, ge=0, le=100)
+    deterministic_decision: str = ""
+    used_llm: bool = False
+    cache_hit: bool = False
+    scoring_mode: str = "deterministic_fallback"
+    llm_provider: str = ""
+    llm_model: str = ""
+    evaluated_at: str
+    overridden: bool = False
+    original_decision: FitGateDecision | None = None
+    override_note: str = ""
+
+
 class ApplicationLoopItem(BaseModel):
     loop_id: str
     company: str
@@ -58,6 +87,8 @@ class ApplicationLoopItem(BaseModel):
     canonical_job_url: str = ""
     state: ApplicationLoopState = "imported"
     revision_count: int = Field(default=0, ge=0)
+    fit_gate: ApplicationLoopFitGateResult | None = None
+    fit_gate_history: list[ApplicationLoopFitGateResult] = Field(default_factory=list)
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
@@ -97,3 +128,46 @@ class ApplicationLoopBatchResponse(BaseModel):
     created_at: str
     summary: ApplicationLoopBatchSummary
     outcomes: list[ApplicationLoopBatchOutcome]
+
+
+class ApplicationLoopFitGateRunRequest(BaseModel):
+    loop_ids: list[str] = Field(min_length=1, max_length=10)
+    use_llm: bool = True
+    force_refresh: bool = False
+
+
+FitGateOutcomeStatus = Literal["evaluated", "cached", "needs_jd", "error"]
+
+
+class ApplicationLoopFitGateOutcome(BaseModel):
+    loop_id: str
+    status: FitGateOutcomeStatus
+    result: ApplicationLoopFitGateResult | None = None
+    loop_item: ApplicationLoopItem | None = None
+    error: str = ""
+
+
+class ApplicationLoopFitGateSummary(BaseModel):
+    requested: int = Field(ge=0)
+    evaluated: int = Field(ge=0)
+    cached: int = Field(ge=0)
+    needs_jd: int = Field(ge=0)
+    apply: int = Field(ge=0)
+    maybe: int = Field(ge=0)
+    skip: int = Field(ge=0)
+    llm_calls: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
+class ApplicationLoopFitGateResponse(BaseModel):
+    summary: ApplicationLoopFitGateSummary
+    outcomes: list[ApplicationLoopFitGateOutcome]
+
+
+class ApplicationLoopFitOverrideRequest(BaseModel):
+    decision: FitGateDecision
+    note: str = Field(min_length=3, max_length=1000)
+
+
+class ApplicationLoopJDUpdateRequest(BaseModel):
+    jd_text: str = Field(min_length=20, max_length=100_000)

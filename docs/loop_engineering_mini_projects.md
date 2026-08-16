@@ -107,6 +107,7 @@ imported -> fit_checked -> draft_ready -> approved_for_apply -> ats_opened
 `approved_for_apply` can also move directly to `submitted_confirmed` when Akhilesh applies
 without using the ATS assistant. Pre-submission states may move to `skipped` when new evidence
 changes the decision.
+Fit Gate skips can return to `fit_checked` only through a human override with a recorded reason.
 
 ### 2. Ten-Job Batch Inbox
 
@@ -143,6 +144,8 @@ Likely files:
 
 ### 3. Fit Gate Agent
 
+Implementation status: shipped as the guarded decision step between inbox import and tailoring.
+
 User payoff:
 - Claude quickly says Apply, Maybe, or Skip for each job, with a short reason and risk flags.
 
@@ -154,6 +157,21 @@ Acceptance criteria:
 - Include sponsorship, seniority, location, title-fit, and skills-fit notes.
 - Use cheap deterministic filters before Claude.
 - Use Claude only for the uncertain or high-value items.
+
+Implemented behavior:
+- Batch and per-item runs return `apply`, `maybe`, or `skip` with a score and concise rationale.
+- Sponsorship, seniority, location, title fit, and skills fit evidence persist on each loop item.
+- Deterministic hard blockers return `skip` without calling Claude.
+- URL-only items remain `imported` with `needs_jd`; they do not spend a model call or pretend to be scored.
+- Persisted Fit Gate results and the semantic-match cache prevent unchanged jobs from consuming tokens again.
+- Human overrides require a reason and are appended to Fit Gate history. Only a human can restore a skipped item.
+- The configured Anthropic model is `claude-sonnet-5`; adaptive thinking is disabled for this compact JSON judgment.
+- Fit Gate does not tailor, submit, or write to Google Sheets.
+
+Endpoints:
+- `POST /application-loop/fit-gate`
+- `PUT /application-loop/items/{loop_id}/jd`
+- `POST /application-loop/items/{loop_id}/fit-override`
 
 Likely files:
 - `app/services/job_quality_gate_service.py`
