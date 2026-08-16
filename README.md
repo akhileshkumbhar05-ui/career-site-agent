@@ -106,6 +106,10 @@ Manual application loop endpoints:
 - `POST /application-loop/fit-gate`
 - `PUT /application-loop/items/{loop_id}/jd`
 - `POST /application-loop/items/{loop_id}/fit-override`
+- `POST /application-loop/items/{loop_id}/tailoring/drafts`
+- `GET /application-loop/items/{loop_id}/tailoring/draft`
+- `POST /application-loop/items/{loop_id}/tailoring/preview`
+- `POST /application-loop/items/{loop_id}/tailoring/approve`
 
 Agent CLI:
 ```bash

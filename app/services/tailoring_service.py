@@ -29,6 +29,7 @@ class TailoringService:
                 selected_project_ids=[],
                 summary_variant_key=summary_variant_key,
                 summary_text="",
+                engine="TailoringService",
             )
 
         target_keywords = normalize_skills(
@@ -75,6 +76,7 @@ class TailoringService:
             selected_project_ids=selected_project_ids,
             summary_variant_key=summary_variant_key,
             summary_text=summary_variant if "summary" in payload.preferences.emphasis else "",
+            engine="TailoringService",
         )
 
     def _infer_role_key(self, title: str) -> str:

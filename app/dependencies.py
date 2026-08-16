@@ -80,7 +80,10 @@ def get_tracker_service() -> TrackerService:
 
 @lru_cache
 def get_application_loop_service() -> ApplicationLoopService:
-    return ApplicationLoopService(matcher=get_llm_match_service())
+    return ApplicationLoopService(
+        matcher=get_llm_match_service(),
+        tailoring_review=get_tailoring_review_service(),
+    )
 
 
 @lru_cache

@@ -9,7 +9,12 @@ from app.schemas.application_loop import (
     ApplicationLoopFitOverrideRequest,
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
+    ApplicationLoopTailoringApproveRequest,
+    ApplicationLoopTailoringApproveResponse,
+    ApplicationLoopTailoringDraftRequest,
+    ApplicationLoopTailoringDraftResponse,
 )
+from app.schemas.tailoring_review import TailoringPreviewRenderResponse, TailoringReviewSelection
 from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
 
 
@@ -66,3 +71,78 @@ def update_jd(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidApplicationLoopTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/tailoring/drafts",
+    response_model=ApplicationLoopTailoringDraftResponse,
+)
+def create_tailoring_draft(
+    loop_id: str,
+    payload: ApplicationLoopTailoringDraftRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringDraftResponse:
+    try:
+        return service.create_tailoring_draft(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/items/{loop_id}/tailoring/draft",
+    response_model=ApplicationLoopTailoringDraftResponse,
+)
+def get_tailoring_draft(
+    loop_id: str,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringDraftResponse:
+    try:
+        return service.get_tailoring_draft(loop_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/tailoring/preview",
+    response_model=TailoringPreviewRenderResponse,
+)
+def render_tailoring_preview(
+    loop_id: str,
+    payload: TailoringReviewSelection,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> TailoringPreviewRenderResponse:
+    try:
+        return service.render_tailoring_preview(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/items/{loop_id}/tailoring/approve",
+    response_model=ApplicationLoopTailoringApproveResponse,
+)
+def approve_tailoring_draft(
+    loop_id: str,
+    payload: ApplicationLoopTailoringApproveRequest,
+    service: ApplicationLoopService = Depends(get_application_loop_service),
+) -> ApplicationLoopTailoringApproveResponse:
+    try:
+        return service.approve_tailoring_draft(loop_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidApplicationLoopTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

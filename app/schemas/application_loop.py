@@ -4,6 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.resume import TailoringPreferences
+from app.schemas.tailoring_review import TailoringDraftResponse, TailoringReviewSelection
+
 
 ApplicationLoopState = Literal[
     "imported",
@@ -76,6 +79,26 @@ class ApplicationLoopFitGateResult(BaseModel):
     override_note: str = ""
 
 
+class ApplicationLoopTailoringDraftRef(BaseModel):
+    draft_id: str
+    version: int = Field(ge=1)
+    base_score: int = Field(ge=0, le=100)
+    tailored_score: int = Field(ge=0, le=100)
+    revision_reason: str = ""
+    engine: str = ""
+    model: str = ""
+    llm_usage: dict = Field(default_factory=dict)
+    claude_call_consumed: bool = False
+    created_at: str
+
+
+class ApplicationLoopTailoringApproval(BaseModel):
+    draft_id: str
+    review: TailoringReviewSelection
+    note: str
+    approved_at: str
+
+
 class ApplicationLoopItem(BaseModel):
     loop_id: str
     company: str
@@ -89,6 +112,9 @@ class ApplicationLoopItem(BaseModel):
     revision_count: int = Field(default=0, ge=0)
     fit_gate: ApplicationLoopFitGateResult | None = None
     fit_gate_history: list[ApplicationLoopFitGateResult] = Field(default_factory=list)
+    tailoring_draft: ApplicationLoopTailoringDraftRef | None = None
+    tailoring_history: list[ApplicationLoopTailoringDraftRef] = Field(default_factory=list)
+    tailoring_approval: ApplicationLoopTailoringApproval | None = None
     created_at: str
     updated_at: str
     history: list[ApplicationLoopEvent] = Field(default_factory=list)
@@ -171,3 +197,24 @@ class ApplicationLoopFitOverrideRequest(BaseModel):
 
 class ApplicationLoopJDUpdateRequest(BaseModel):
     jd_text: str = Field(min_length=20, max_length=100_000)
+
+
+class ApplicationLoopTailoringDraftRequest(BaseModel):
+    preferences: TailoringPreferences = Field(default_factory=TailoringPreferences)
+    revision_reason: str = Field(default="", max_length=1000)
+
+
+class ApplicationLoopTailoringDraftResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    draft: TailoringDraftResponse
+
+
+class ApplicationLoopTailoringApproveRequest(TailoringReviewSelection):
+    approval_note: str = Field(min_length=3, max_length=1000)
+
+
+class ApplicationLoopTailoringApproveResponse(BaseModel):
+    loop_item: ApplicationLoopItem
+    draft_id: str
+    resume_preview_html: str
+    message: str

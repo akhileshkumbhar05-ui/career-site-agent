@@ -79,6 +79,10 @@ class ResumeTailorResponse(BaseModel):
     skill_gaps: list[str] = []
     connection_note: Optional[str] = None            # LinkedIn connection note ≤ 299 chars
     cover_letter_text: Optional[str] = None
+    engine: str = ""
+    model: str = ""
+    claude_call_consumed: bool = False
+    llm_usage: dict = Field(default_factory=dict)
 
 
 class ResumeDecisionRequest(BaseModel):

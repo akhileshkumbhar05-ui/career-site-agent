@@ -181,6 +181,8 @@ Likely files:
 
 ### 4. Tailoring Review Loop
 
+Implementation status: shipped as the persisted propose, critique, revise, and approve loop.
+
 User payoff:
 - Resume drafts become interactive: accept, revise with instructions, change bullet counts per subsection, regenerate, then approve.
 
@@ -193,6 +195,22 @@ Acceptance criteria:
 - Ground every bullet to master resume, projects, work experience, or publications.
 - Add a revision reason log so repeated fixes become visible.
 - No file export until approval.
+
+Implemented behavior:
+- Only a Fit Gate `apply` decision can spend the first tailoring call.
+- Drafts persist against the application-loop item and can be reopened without another model call.
+- The full resume preview is the primary review surface; summary, grounded rewrites, projects, papers, optional cover letter, and per-subsection bullet counts remain editable beside it.
+- Preview refreshes are local and free. A new Claude call happens only when Akhilesh submits a revision reason and regenerates the draft.
+- Every regeneration records the human revision reason, increments the revision count, and keeps the prior draft reference in history.
+- Approval stores the exact reviewed selection and moves the item to `approved_for_apply`; it does not create DOCX or PDF files.
+- Sonnet 5 caches the stable resume/profile prompt prefix for batch reuse, uses medium adaptive-thinking effort, and has an 8,192-token response cap.
+- Engine provenance and token/cache usage are persisted. A rule-based fallback is never labeled as Claude-authored.
+
+Endpoints:
+- `POST /application-loop/items/{loop_id}/tailoring/drafts`
+- `GET /application-loop/items/{loop_id}/tailoring/draft`
+- `POST /application-loop/items/{loop_id}/tailoring/preview`
+- `POST /application-loop/items/{loop_id}/tailoring/approve`
 
 Likely files:
 - `app/services/tailoring_review_service.py`

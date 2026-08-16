@@ -23,6 +23,8 @@
 
 ## Review Boundary
 - Tailored resumes are drafts until Akhilesh reviews them.
+- Application-loop approval records the reviewed content but does not render DOCX or PDF files; export is a separate human-gated action.
+- Reopening a draft and refreshing its preview are local operations. Regenerating from a recorded revision reason is the only review action that spends another tailoring call.
 - Browser autofill may fill high-confidence profile fields, but resume upload and final submit stay manual.
 - If the current page is only an application form and not a full job description, the system should use saved profile answers instead of generating a tailored resume from incomplete context.
 - `Profile/` is local project knowledge. Public GitHub and LinkedIn profile URLs may appear in resumes; private access links must stay local-only.

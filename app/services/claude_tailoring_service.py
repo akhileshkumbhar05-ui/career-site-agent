@@ -129,7 +129,7 @@ Estimate score 0-100 based on honest match assessment.
 
 
 class ClaudeTailoringService:
-    def __init__(self, api_key: str, *, model: str = "claude-sonnet-4-6") -> None:
+    def __init__(self, api_key: str, *, model: str = "claude-sonnet-5") -> None:
         if anthropic is None:
             raise RuntimeError("anthropic package is not installed.")
         self.client = anthropic.Anthropic(api_key=api_key)
@@ -146,9 +146,18 @@ class ClaudeTailoringService:
         profile_context = self.profile_evidence.build_prompt_context()
         result = self._call_claude(resume, parsed_jd, profile_context, payload.preferences)
 
-        if not result:
+        if not result or result.get("_error"):
             logger.warning("Claude tailoring returned empty — falling back to rule-based")
-            return self._rule_based_fallback(payload, resume, parsed_jd)
+            fallback = self._rule_based_fallback(payload, resume, parsed_jd)
+            if result:
+                return fallback.model_copy(
+                    update={
+                        "model": self.model,
+                        "claude_call_consumed": True,
+                        "llm_usage": result.get("_llm_usage", {}),
+                    }
+                )
+            return fallback
 
         result = self._apply_preferences(result, payload.preferences)
 
@@ -164,6 +173,7 @@ class ClaudeTailoringService:
         connection_note = result.get("connection_note", "") if payload.preferences.include_connection_note else ""
         cover_letter_text = result.get("cover_letter_text", "") if payload.preferences.include_cover_letter else ""
         skill_gaps = [str(item) for item in result.get("skill_gaps", []) if item]
+        llm_usage = result.get("_llm_usage") if isinstance(result.get("_llm_usage"), dict) else {}
         score_value = self._safe_score(score, payload.current_score + 8)
 
         if score_value < 65:
@@ -186,6 +196,10 @@ class ClaudeTailoringService:
                 skill_gaps=skill_gaps,
                 connection_note="",
                 cover_letter_text="",
+                engine="ClaudeTailoringService",
+                model=self.model,
+                claude_call_consumed=True,
+                llm_usage=llm_usage,
             )
 
         changes_summary = [
@@ -220,6 +234,10 @@ class ClaudeTailoringService:
             skill_gaps=skill_gaps,
             connection_note=connection_note[:299] if connection_note else "",
             cover_letter_text=self._clean_cover_letter(cover_letter_text) if cover_letter_text else "",
+            engine="ClaudeTailoringService",
+            model=self.model,
+            claude_call_consumed=True,
+            llm_usage=llm_usage,
         )
 
     @staticmethod
@@ -265,13 +283,38 @@ class ClaudeTailoringService:
         )
 
         try:
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                system=system,
-                messages=[{"role": "user", "content": user}],
+            request = {
+                "model": self.model,
+                "max_tokens": 8192,
+                "system": [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                "messages": [{"role": "user", "content": user}],
+            }
+            if self.model == "claude-sonnet-5":
+                request["thinking"] = {"type": "adaptive"}
+                request["output_config"] = {"effort": "medium"}
+            message = self.client.messages.create(**request)
+            usage = getattr(message, "usage", None)
+            llm_usage = {
+                "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+                "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+                "cache_creation_input_tokens": int(
+                    getattr(usage, "cache_creation_input_tokens", 0) or 0
+                ),
+                "cache_read_input_tokens": int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+            }
+            text_block = next(
+                (block for block in message.content if getattr(block, "type", "") == "text"),
+                None,
             )
-            raw = message.content[0].text.strip()
+            if text_block is None:
+                return {"_error": "missing_text", "_llm_usage": llm_usage}
+            raw = text_block.text.strip()
 
             # Strip markdown fences if present
             if raw.startswith("```"):
@@ -280,11 +323,15 @@ class ClaudeTailoringService:
                     l for l in lines if not l.strip().startswith("```")
                 ).strip()
 
-            return json.loads(raw)
+            result = json.loads(raw)
+            if not isinstance(result, dict):
+                return {"_error": "json_shape", "_llm_usage": llm_usage}
+            result["_llm_usage"] = llm_usage
+            return result
 
         except json.JSONDecodeError as exc:
             logger.error("Claude tailoring JSON parse failed: %s", exc)
-            return {}
+            return {"_error": "json_parse", "_llm_usage": llm_usage}
         except Exception as exc:
             logger.error("Claude API call failed: %s", exc)
             return {}
@@ -472,6 +519,7 @@ class ClaudeTailoringService:
             tailored_score=min(100, payload.current_score + 8),
             selected_project_ids=selected,
             changes_summary=["Rule-based fallback: Claude API unavailable."],
+            engine="TailoringService",
         )
 
     def _load_resume(self) -> dict:

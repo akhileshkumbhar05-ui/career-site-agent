@@ -27,12 +27,24 @@ from app.schemas.application_loop import (
     ApplicationLoopItem,
     ApplicationLoopJDUpdateRequest,
     ApplicationLoopState,
+    ApplicationLoopTailoringApproval,
+    ApplicationLoopTailoringApproveRequest,
+    ApplicationLoopTailoringApproveResponse,
+    ApplicationLoopTailoringDraftRef,
+    ApplicationLoopTailoringDraftRequest,
+    ApplicationLoopTailoringDraftResponse,
     ApplicationLoopTransitionRequest,
+)
+from app.schemas.tailoring_review import (
+    TailoringDraftRequest,
+    TailoringPreviewRenderResponse,
+    TailoringReviewSelection,
 )
 from app.services.tracker_service import TrackerService
 
 if TYPE_CHECKING:
     from app.services.llm_match_service import LLMMatchService
+    from app.services.tailoring_review_service import TailoringReviewService
 
 
 ALLOWED_TRANSITIONS: dict[ApplicationLoopState, tuple[ApplicationLoopState, ...]] = {
@@ -60,9 +72,11 @@ class ApplicationLoopService:
         *,
         clock: Callable[[], datetime] | None = None,
         matcher: LLMMatchService | None = None,
+        tailoring_review: TailoringReviewService | None = None,
     ) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.matcher = matcher
+        self.tailoring_review = tailoring_review
         init_db()
 
     def create(self, payload: ApplicationLoopCreateRequest) -> ApplicationLoopItem:
@@ -419,6 +433,161 @@ class ApplicationLoopService:
         updated.updated_at = self._now()
         self._save_item(updated)
         return updated
+
+    def create_tailoring_draft(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopTailoringDraftRequest,
+    ) -> ApplicationLoopTailoringDraftResponse:
+        item = self.get_item(loop_id)
+        if self.tailoring_review is None:
+            raise RuntimeError("Tailoring review service is not configured.")
+        if item.state not in {"fit_checked", "draft_ready", "approved_for_apply"}:
+            raise InvalidApplicationLoopTransition(
+                f"A tailoring draft cannot be created from '{item.state}'."
+            )
+        if item.state == "fit_checked":
+            if item.fit_gate is None or item.fit_gate.evaluation_status != "complete":
+                raise InvalidApplicationLoopTransition("Complete Fit Gate before tailoring this job.")
+            if item.fit_gate.decision != "apply":
+                raise InvalidApplicationLoopTransition(
+                    "Change the Fit Gate decision to apply before spending a tailoring call."
+                )
+        elif item.tailoring_draft is None:
+            raise InvalidApplicationLoopTransition("The current application has no draft to revise.")
+
+        revision_reason = payload.revision_reason.strip()
+        is_revision = item.state in {"draft_ready", "approved_for_apply"}
+        if is_revision and len(revision_reason) < 3:
+            raise InvalidApplicationLoopTransition(
+                "Record what should change before regenerating the resume."
+            )
+
+        draft = self.tailoring_review.create_draft(
+            TailoringDraftRequest(
+                url=item.job_url,
+                page_title=f"{item.role} at {item.company}",
+                page_text=item.jd_text,
+                company=item.company,
+                role=item.role,
+                source=item.source,
+                render_pdf=False,
+                tailoring_preferences=payload.preferences,
+            )
+        )
+
+        if is_revision:
+            revision_requested = self.transition(
+                item,
+                ApplicationLoopTransitionRequest(
+                    target_state="revision_requested",
+                    actor="human",
+                    note=revision_reason,
+                ),
+            )
+            updated = self.transition(
+                revision_requested,
+                ApplicationLoopTransitionRequest(
+                    target_state="draft_ready",
+                    actor="agent",
+                    note=f"Tailoring draft v{len(item.tailoring_history) + 1} generated for review.",
+                ),
+            )
+        else:
+            updated = self.transition(
+                item,
+                ApplicationLoopTransitionRequest(
+                    target_state="draft_ready",
+                    actor="agent",
+                    note="Initial tailoring draft generated for review.",
+                ),
+            )
+
+        reference = ApplicationLoopTailoringDraftRef(
+            draft_id=draft.draft_id,
+            version=len(item.tailoring_history) + 1,
+            base_score=draft.base_score,
+            tailored_score=draft.tailored_score,
+            revision_reason=revision_reason,
+            engine=draft.engine,
+            model=draft.model,
+            llm_usage=draft.llm_usage,
+            claude_call_consumed=draft.claude_call_consumed,
+            created_at=self._now(),
+        )
+        updated.tailoring_draft = reference
+        updated.tailoring_history.append(reference)
+        updated.tailoring_approval = None
+        self._save_item(updated)
+        return ApplicationLoopTailoringDraftResponse(loop_item=updated, draft=draft)
+
+    def get_tailoring_draft(self, loop_id: str) -> ApplicationLoopTailoringDraftResponse:
+        item = self.get_item(loop_id)
+        if self.tailoring_review is None:
+            raise RuntimeError("Tailoring review service is not configured.")
+        if item.tailoring_draft is None:
+            raise InvalidApplicationLoopTransition("This application does not have a tailoring draft yet.")
+        return ApplicationLoopTailoringDraftResponse(
+            loop_item=item,
+            draft=self.tailoring_review.get_draft(item.tailoring_draft.draft_id),
+        )
+
+    def render_tailoring_preview(
+        self,
+        loop_id: str,
+        payload: TailoringReviewSelection,
+    ) -> TailoringPreviewRenderResponse:
+        item = self.get_item(loop_id)
+        if self.tailoring_review is None:
+            raise RuntimeError("Tailoring review service is not configured.")
+        self._validate_current_draft(item, payload.draft_id)
+        return self.tailoring_review.render_preview(payload)
+
+    def approve_tailoring_draft(
+        self,
+        loop_id: str,
+        payload: ApplicationLoopTailoringApproveRequest,
+    ) -> ApplicationLoopTailoringApproveResponse:
+        item = self.get_item(loop_id)
+        if self.tailoring_review is None:
+            raise RuntimeError("Tailoring review service is not configured.")
+        if item.state != "draft_ready":
+            raise InvalidApplicationLoopTransition(
+                f"A tailoring draft cannot be approved from '{item.state}'."
+            )
+        self._validate_current_draft(item, payload.draft_id)
+        review = TailoringReviewSelection.model_validate(
+            payload.model_dump(exclude={"approval_note"})
+        )
+        preview = self.tailoring_review.approve_draft(review)
+        updated = self.transition(
+            item,
+            ApplicationLoopTransitionRequest(
+                target_state="approved_for_apply",
+                actor="human",
+                note=payload.approval_note,
+            ),
+        )
+        updated.tailoring_approval = ApplicationLoopTailoringApproval(
+            draft_id=payload.draft_id,
+            review=review,
+            note=payload.approval_note.strip(),
+            approved_at=self._now(),
+        )
+        self._save_item(updated)
+        return ApplicationLoopTailoringApproveResponse(
+            loop_item=updated,
+            draft_id=payload.draft_id,
+            resume_preview_html=preview.resume_preview_html,
+            message=preview.message,
+        )
+
+    @staticmethod
+    def _validate_current_draft(item: ApplicationLoopItem, draft_id: str) -> None:
+        if item.tailoring_draft is None or item.tailoring_draft.draft_id != draft_id:
+            raise InvalidApplicationLoopTransition(
+                "The tailoring request does not match the current draft for this application."
+            )
 
     def _evaluate_fit_gate(
         self,

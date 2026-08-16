@@ -53,7 +53,10 @@ class TailoringDraftResponse(BaseModel):
     changes_summary: list[str] = Field(default_factory=list)
     resume_preview_html: str = ""
     message: str
-    claude_call_consumed: bool = True
+    engine: str = ""
+    model: str = ""
+    llm_usage: dict = Field(default_factory=dict)
+    claude_call_consumed: bool = False
 
 
 class TailoringBulletDecision(BaseModel):
@@ -62,7 +65,7 @@ class TailoringBulletDecision(BaseModel):
     text: str = Field(default="", max_length=700)
 
 
-class TailoringFinalizeRequest(BaseModel):
+class TailoringReviewSelection(BaseModel):
     draft_id: str
     summary_accepted: bool = True
     summary_text: str = Field(default="", max_length=1400)
@@ -73,6 +76,9 @@ class TailoringFinalizeRequest(BaseModel):
     connection_note: str = Field(default="", max_length=299)
     cover_letter_accepted: bool = True
     cover_letter_text: str = Field(default="", max_length=4000)
+
+
+class TailoringFinalizeRequest(TailoringReviewSelection):
     output_root_override: str = ""
     render_pdf: bool = True
 

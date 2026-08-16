@@ -351,7 +351,58 @@ function Toggle({ label, checked, onChange }) {
 }
 
 const BATCH_SOURCES = ["Jobright AI", "LinkedIn", "Referral", "Company Website", "Simplify", "TikTok", "Cognizant", "Unknown"];
+const TAILORING_EMPHASIS = [
+  ["summary", "Summary"],
+  ["experience", "Experience"],
+  ["projects", "Projects"],
+  ["skills", "Skills"],
+  ["research_papers", "Research papers"]
+];
 let batchEntrySequence = 0;
+
+function newTailoringPreferences(source = {}) {
+  const counts = source.bullet_counts || {};
+  return {
+    preset: source.preset || "balanced",
+    rewrite_intensity: source.rewrite_intensity || "balanced",
+    emphasis: Array.isArray(source.emphasis) ? [...source.emphasis] : ["summary", "experience", "projects", "skills"],
+    custom_instructions: source.custom_instructions || "",
+    include_connection_note: Boolean(source.include_connection_note),
+    include_cover_letter: Boolean(source.include_cover_letter),
+    bullet_counts: {
+      experience_per_role: Number(counts.experience_per_role ?? 3),
+      projects_per_project: Number(counts.projects_per_project ?? 2),
+      research_per_paper: Number(counts.research_per_paper ?? 2)
+    }
+  };
+}
+
+function reviewSelectionFromDraft(draft) {
+  return {
+    draft_id: draft.draft_id,
+    summary_accepted: true,
+    summary_text: draft.summary_proposed || draft.summary_original || "",
+    bullets: (draft.bullets || []).map((bullet) => ({
+      bullet_id: bullet.bullet_id,
+      accepted: true,
+      text: bullet.proposed || bullet.original || ""
+    })),
+    project_ids: (draft.projects || []).filter((project) => project.selected !== false).map((project) => project.project_id),
+    publication_ids: (draft.publications || []).filter((paper) => paper.selected !== false).map((paper) => paper.publication_id),
+    bullet_counts: { ...newTailoringPreferences(draft.preferences).bullet_counts },
+    connection_note: draft.connection_note || "",
+    cover_letter_accepted: true,
+    cover_letter_text: draft.cover_letter_text || ""
+  };
+}
+
+function tailoringEngineLabel(value) {
+  if (value?.engine === "TailoringService" && value?.claude_call_consumed && value?.model) {
+    return `Rule-based fallback after ${value.model}`;
+  }
+  if (value?.engine === "TailoringService") return "Rule-based";
+  return value?.model || value?.engine || "Local";
+}
 
 function newBatchEntry(overrides = {}) {
   batchEntrySequence += 1;
@@ -380,6 +431,12 @@ function BatchInboxWorkspace() {
   const [jdEditors, setJdEditors] = React.useState({});
   const [reviewItemId, setReviewItemId] = React.useState("");
   const [overrideNote, setOverrideNote] = React.useState("");
+  const [tailoringItemId, setTailoringItemId] = React.useState("");
+  const [tailoringPreferences, setTailoringPreferences] = React.useState(() => newTailoringPreferences());
+  const [revisionReason, setRevisionReason] = React.useState("");
+  const [draftReview, setDraftReview] = React.useState(null);
+  const [reviewSelection, setReviewSelection] = React.useState(null);
+  const [approvalNote, setApprovalNote] = React.useState("");
 
   const loadInbox = React.useCallback(async () => {
     setBusy((current) => current || "load");
@@ -556,12 +613,117 @@ function BatchInboxWorkspace() {
     }
   }
 
+  function openTailoringOptions(item) {
+    const opening = tailoringItemId !== item.loop_id;
+    setTailoringItemId(opening ? item.loop_id : "");
+    setTailoringPreferences(newTailoringPreferences());
+    setRevisionReason("");
+    setReviewItemId("");
+    setOverrideNote("");
+  }
+
+  function showDraftReview(result) {
+    setDraftReview(result);
+    setReviewSelection(reviewSelectionFromDraft(result.draft));
+    setTailoringPreferences(newTailoringPreferences(result.draft.preferences));
+    setRevisionReason("");
+    setApprovalNote(result.loop_item?.tailoring_approval?.note || "");
+  }
+
+  async function createTailoringDraft(item) {
+    const isRevision = Boolean(item.tailoring_draft);
+    if (isRevision && revisionReason.trim().length < 3) {
+      setError("Record what Claude should change before regenerating the draft.");
+      return;
+    }
+    setBusy(`tailor:${item.loop_id}`);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiPost(`/application-loop/items/${item.loop_id}/tailoring/drafts`, {
+        preferences: tailoringPreferences,
+        revision_reason: revisionReason.trim()
+      });
+      showDraftReview(result);
+      setTailoringItemId("");
+      setMessage(isRevision ? `Draft v${result.loop_item.tailoring_draft.version} is ready for review.` : "Tailored draft is ready for review.");
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not create the tailoring draft.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function openTailoringDraft(item) {
+    setBusy(`draft:${item.loop_id}`);
+    setError("");
+    try {
+      const result = await apiGet(`/application-loop/items/${item.loop_id}/tailoring/draft`);
+      showDraftReview(result);
+    } catch (err) {
+      setError(err.message || "Could not reopen the tailoring draft.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function refreshTailoringPreview() {
+    if (!draftReview || !reviewSelection) return;
+    setBusy(`preview:${draftReview.loop_item.loop_id}`);
+    setError("");
+    try {
+      const result = await apiPost(
+        `/application-loop/items/${draftReview.loop_item.loop_id}/tailoring/preview`,
+        reviewSelection
+      );
+      setDraftReview((current) => ({
+        ...current,
+        draft: { ...current.draft, resume_preview_html: result.resume_preview_html }
+      }));
+      setMessage("Preview refreshed locally.");
+    } catch (err) {
+      setError(err.message || "Could not refresh the resume preview.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function approveTailoringDraft() {
+    if (!draftReview || !reviewSelection) return;
+    if (approvalNote.trim().length < 3) {
+      setError("Add a short approval note before accepting the draft.");
+      return;
+    }
+    const loopId = draftReview.loop_item.loop_id;
+    setBusy(`approve:${loopId}`);
+    setError("");
+    try {
+      const result = await apiPost(`/application-loop/items/${loopId}/tailoring/approve`, {
+        ...reviewSelection,
+        approval_note: approvalNote.trim()
+      });
+      setDraftReview((current) => ({
+        ...current,
+        loop_item: result.loop_item,
+        draft: { ...current.draft, resume_preview_html: result.resume_preview_html }
+      }));
+      setMessage(result.message);
+      await loadInbox();
+    } catch (err) {
+      setError(err.message || "Could not approve this tailoring draft.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const outcomes = new Map((batchResult?.outcomes || []).map((outcome) => [outcome.entry_id, outcome]));
   const readyCount = entries.filter((entry) => entry.job_url.trim() || entry.jd_text.trim()).length;
   const pendingFitIds = inbox.filter((item) => item.state === "imported").map((item) => item.loop_id);
 
   return (
-    <section className="batch-workspace">
+    <>
+      <section className="batch-workspace">
       <section className="batch-compose" aria-label="New application batch">
         <div className="batch-section-header">
           <div>
@@ -721,6 +883,9 @@ function BatchInboxWorkspace() {
             const needsJd = !item.jd_text || item.jd_text.trim().length < 80 || fit?.evaluation_status === "needs_jd";
             const jdEditorOpen = Object.prototype.hasOwnProperty.call(jdEditors, item.loop_id);
             const reviewOpen = reviewItemId === item.loop_id;
+            const tailoringOpen = tailoringItemId === item.loop_id;
+            const hasTailoringDraft = Boolean(item.tailoring_draft);
+            const canStartTailoring = item.state === "fit_checked" && fit?.decision === "apply";
             const decisionTone = fit?.decision === "apply" ? "good" : fit?.decision === "skip" ? "bad" : "warn";
             return (
               <article className={`batch-inbox-item ${hasCompleteFit ? `fit-${fit.decision}` : ""}`} key={item.loop_id}>
@@ -741,6 +906,8 @@ function BatchInboxWorkspace() {
                   {fit?.used_llm && <span>{fit.llm_model || "Claude"}{fit.cache_hit ? " / cached" : ""}</span>}
                   {fit && !fit.used_llm && <span>Deterministic</span>}
                   {fit?.overridden && <span>Human override</span>}
+                  {item.tailoring_draft && <span>Draft v{item.tailoring_draft.version}</span>}
+                  {item.revision_count > 0 && <span>{item.revision_count} revision{item.revision_count === 1 ? "" : "s"}</span>}
                 </div>
                 {item.job_url && (
                   <a className="batch-job-link" href={item.job_url} target="_blank" rel="noreferrer">
@@ -759,6 +926,14 @@ function BatchInboxWorkspace() {
                   </section>
                 )}
                 {fit?.overridden && <p className="fit-override-note"><strong>Override:</strong> {fit.override_note}</p>}
+                {item.tailoring_draft && (
+                  <div className="tailoring-draft-strip">
+                    <span>Resume {item.tailoring_draft.base_score} to {item.tailoring_draft.tailored_score}</span>
+                    <span>{tailoringEngineLabel(item.tailoring_draft)}</span>
+                    {item.tailoring_draft.llm_usage?.output_tokens > 0 && <span>{item.tailoring_draft.llm_usage.output_tokens} output tokens</span>}
+                    {item.state === "approved_for_apply" && <span className="tag good">Approved</span>}
+                  </div>
+                )}
 
                 {hasCompleteFit && (
                   <details className="fit-evidence">
@@ -781,7 +956,19 @@ function BatchInboxWorkspace() {
                   {hasCompleteFit && (
                     <button className="icon-button secondary" onClick={() => openReview(item)} disabled={Boolean(busy)}>
                       <Eye size={16} />
-                      <span>{reviewOpen ? "Close review" : "Review"}</span>
+                      <span>{reviewOpen ? "Close decision" : "Fit decision"}</span>
+                    </button>
+                  )}
+                  {canStartTailoring && !hasTailoringDraft && (
+                    <button className="icon-button primary" onClick={() => openTailoringOptions(item)} disabled={Boolean(busy)}>
+                      <Sparkles size={16} />
+                      <span>{tailoringOpen ? "Close tailoring" : "Tailor resume"}</span>
+                    </button>
+                  )}
+                  {hasTailoringDraft && (
+                    <button className="icon-button primary" onClick={() => openTailoringDraft(item)} disabled={Boolean(busy)}>
+                      {busy === `draft:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
+                      <span>{item.state === "approved_for_apply" ? "Review approved" : "Review resume"}</span>
                     </button>
                   )}
                   {item.state === "fit_checked" && hasCompleteFit && (
@@ -830,6 +1017,16 @@ function BatchInboxWorkspace() {
                     </div>
                   </div>
                 )}
+
+                {tailoringOpen && (
+                  <div className="tailoring-inline-panel">
+                    <TailoringPreferencesEditor value={tailoringPreferences} onChange={setTailoringPreferences} />
+                    <button className="icon-button primary" onClick={() => createTailoringDraft(item)} disabled={Boolean(busy)}>
+                      {busy === `tailor:${item.loop_id}` ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+                      <span>Create Claude draft</span>
+                    </button>
+                  </div>
+                )}
               </article>
             );
           }) : (
@@ -840,7 +1037,26 @@ function BatchInboxWorkspace() {
           )}
         </div>
       </aside>
-    </section>
+      </section>
+      {draftReview && reviewSelection && (
+        <TailoringReviewModal
+          result={draftReview}
+          selection={reviewSelection}
+          onSelectionChange={setReviewSelection}
+          preferences={tailoringPreferences}
+          onPreferencesChange={setTailoringPreferences}
+          revisionReason={revisionReason}
+          onRevisionReasonChange={setRevisionReason}
+          approvalNote={approvalNote}
+          onApprovalNoteChange={setApprovalNote}
+          busy={busy}
+          onRefresh={refreshTailoringPreview}
+          onApprove={approveTailoringDraft}
+          onRegenerate={() => createTailoringDraft(draftReview.loop_item)}
+          onClose={() => setDraftReview(null)}
+        />
+      )}
+    </>
   );
 }
 
@@ -858,6 +1074,286 @@ function FitSignal({ label, value }) {
     <div className="fit-signal">
       <span>{label}</span>
       <p>{value || "Needs review."}</p>
+    </div>
+  );
+}
+
+function TailoringPreferencesEditor({ value, onChange }) {
+  function update(field, nextValue) {
+    onChange({ ...value, [field]: nextValue });
+  }
+
+  function toggleEmphasis(key, checked) {
+    const current = new Set(value.emphasis || []);
+    if (checked) current.add(key);
+    else current.delete(key);
+    update("emphasis", TAILORING_EMPHASIS.map(([candidate]) => candidate).filter((candidate) => current.has(candidate)));
+  }
+
+  function updateCount(field, rawValue) {
+    const parsed = Number.parseInt(rawValue, 10);
+    const count = Number.isFinite(parsed) ? Math.max(0, Math.min(50, parsed)) : 0;
+    update("bullet_counts", { ...value.bullet_counts, [field]: count });
+  }
+
+  return (
+    <div className="tailoring-preferences">
+      <div className="tailoring-select-grid">
+        <label>
+          <span>Style</span>
+          <select value={value.preset} onChange={(event) => update("preset", event.target.value)}>
+            <option value="balanced">Balanced</option>
+            <option value="technical_depth">Technical depth</option>
+            <option value="business_impact">Business impact</option>
+            <option value="projects_first">Projects first</option>
+            <option value="experience_first">Experience first</option>
+            <option value="minimal_edits">Minimal edits</option>
+          </select>
+        </label>
+        <label>
+          <span>Rewrite strength</span>
+          <select value={value.rewrite_intensity} onChange={(event) => update("rewrite_intensity", event.target.value)}>
+            <option value="light">Light</option>
+            <option value="balanced">Balanced</option>
+            <option value="strong">Strong alignment</option>
+          </select>
+        </label>
+      </div>
+
+      <fieldset className="tailoring-emphasis">
+        <legend>Emphasize</legend>
+        {TAILORING_EMPHASIS.map(([key, label]) => (
+          <label key={key}>
+            <input
+              type="checkbox"
+              checked={(value.emphasis || []).includes(key)}
+              onChange={(event) => toggleEmphasis(key, event.target.checked)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </fieldset>
+
+      <div className="tailoring-count-grid">
+        <label>
+          <span>Per experience role</span>
+          <input type="number" min="0" max="50" value={value.bullet_counts.experience_per_role} onChange={(event) => updateCount("experience_per_role", event.target.value)} />
+        </label>
+        <label>
+          <span>Per project</span>
+          <input type="number" min="0" max="50" value={value.bullet_counts.projects_per_project} onChange={(event) => updateCount("projects_per_project", event.target.value)} />
+        </label>
+        <label>
+          <span>Per paper</span>
+          <input type="number" min="0" max="50" value={value.bullet_counts.research_per_paper} onChange={(event) => updateCount("research_per_paper", event.target.value)} />
+        </label>
+      </div>
+
+      <div className="tailoring-toggle-row">
+        <Toggle label="Recruiter note" checked={value.include_connection_note} onChange={(checked) => update("include_connection_note", checked)} />
+        <Toggle label="Cover letter" checked={value.include_cover_letter} onChange={(checked) => update("include_cover_letter", checked)} />
+      </div>
+
+      <label className="tailoring-direction">
+        <span>Additional direction</span>
+        <textarea
+          value={value.custom_instructions}
+          onChange={(event) => update("custom_instructions", event.target.value)}
+          placeholder="Prioritize the strongest honest evidence for this role."
+          maxLength={600}
+        />
+      </label>
+    </div>
+  );
+}
+
+function TailoringReviewModal({
+  result,
+  selection,
+  onSelectionChange,
+  preferences,
+  onPreferencesChange,
+  revisionReason,
+  onRevisionReasonChange,
+  approvalNote,
+  onApprovalNoteChange,
+  busy,
+  onRefresh,
+  onApprove,
+  onRegenerate,
+  onClose
+}) {
+  const { draft, loop_item: loopItem } = result;
+  const approved = loopItem.state === "approved_for_apply";
+  const usage = draft.llm_usage || {};
+
+  React.useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  function updateSelection(field, value) {
+    onSelectionChange({ ...selection, [field]: value });
+  }
+
+  function updateBullet(index, changes) {
+    updateSelection("bullets", selection.bullets.map((bullet, bulletIndex) => bulletIndex === index ? { ...bullet, ...changes } : bullet));
+  }
+
+  function toggleSelected(field, id, checked, max) {
+    const current = new Set(selection[field] || []);
+    if (checked && current.size < max) current.add(id);
+    if (!checked) current.delete(id);
+    updateSelection(field, [...current]);
+  }
+
+  return (
+    <div className="tailoring-modal-backdrop" role="presentation">
+      <section className="tailoring-modal" role="dialog" aria-modal="true" aria-label={`${draft.role} tailored resume review`}>
+        <header className="tailoring-modal-header">
+          <div>
+            <span>{draft.company}</span>
+            <h2>{draft.role}</h2>
+          </div>
+          <div className="tailoring-modal-status">
+            <span className={`tag ${approved ? "good" : "blue"}`}>{approved ? "Approved" : `Draft v${loopItem.tailoring_draft?.version || 1}`}</span>
+            <span>{draft.base_score} to {draft.tailored_score}</span>
+            <button className="icon-button ghost compact-icon" title="Close review" onClick={onClose}>
+              <XCircle size={20} />
+            </button>
+          </div>
+        </header>
+
+        <div className="tailoring-modal-body">
+          <div className="resume-preview-stage">
+            <iframe title={`${draft.role} resume preview`} srcDoc={draft.resume_preview_html} sandbox="" />
+          </div>
+
+          <aside className="tailoring-review-sidebar">
+            <section className="tailoring-review-meta">
+              <div><span>Engine</span><strong>{tailoringEngineLabel(draft)}</strong></div>
+              <div><span>Input</span><strong>{Number(usage.input_tokens || 0).toLocaleString()}</strong></div>
+              <div><span>Output</span><strong>{Number(usage.output_tokens || 0).toLocaleString()}</strong></div>
+              <div><span>Cache read</span><strong>{Number(usage.cache_read_input_tokens || 0).toLocaleString()}</strong></div>
+            </section>
+
+            <section className="tailoring-review-section">
+              <div className="tailoring-review-heading">
+                <h3>Summary</h3>
+                <Toggle label="Use" checked={selection.summary_accepted} onChange={(checked) => updateSelection("summary_accepted", checked)} />
+              </div>
+              <textarea value={selection.summary_text} onChange={(event) => updateSelection("summary_text", event.target.value)} maxLength={1400} />
+            </section>
+
+            {(draft.bullets || []).length > 0 && (
+              <section className="tailoring-review-section">
+                <h3>Grounded rewrites</h3>
+                <div className="tailoring-bullet-review-list">
+                  {draft.bullets.map((bullet, index) => (
+                    <label className="tailoring-bullet-review" key={bullet.bullet_id}>
+                      <span className="tailoring-bullet-label">
+                        <input type="checkbox" checked={selection.bullets[index]?.accepted ?? true} onChange={(event) => updateBullet(index, { accepted: event.target.checked })} />
+                        <strong>{bullet.item_label || bullet.section}</strong>
+                        <em>{bullet.section}</em>
+                      </span>
+                      <textarea value={selection.bullets[index]?.text || ""} onChange={(event) => updateBullet(index, { text: event.target.value })} maxLength={700} />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {(draft.projects || []).length > 0 && (
+              <section className="tailoring-review-section">
+                <h3>Projects</h3>
+                <div className="tailoring-choice-list">
+                  {draft.projects.map((project) => (
+                    <label key={project.project_id}>
+                      <input type="checkbox" checked={(selection.project_ids || []).includes(project.project_id)} onChange={(event) => toggleSelected("project_ids", project.project_id, event.target.checked, 3)} />
+                      <span>{project.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {(draft.publications || []).length > 0 && (
+              <section className="tailoring-review-section">
+                <h3>Research papers</h3>
+                <div className="tailoring-choice-list">
+                  {draft.publications.map((paper) => (
+                    <label key={paper.publication_id}>
+                      <input type="checkbox" checked={(selection.publication_ids || []).includes(paper.publication_id)} onChange={(event) => toggleSelected("publication_ids", paper.publication_id, event.target.checked, 2)} />
+                      <span>{paper.title}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="tailoring-review-section">
+              <h3>Bullets per subsection</h3>
+              <div className="tailoring-count-grid">
+                <label><span>Experience</span><input type="number" min="0" max="50" value={selection.bullet_counts.experience_per_role} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, experience_per_role: Number(event.target.value) })} /></label>
+                <label><span>Projects</span><input type="number" min="0" max="50" value={selection.bullet_counts.projects_per_project} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, projects_per_project: Number(event.target.value) })} /></label>
+                <label><span>Research</span><input type="number" min="0" max="50" value={selection.bullet_counts.research_per_paper} onChange={(event) => updateSelection("bullet_counts", { ...selection.bullet_counts, research_per_paper: Number(event.target.value) })} /></label>
+              </div>
+            </section>
+
+            {draft.connection_note && (
+              <section className="tailoring-review-section">
+                <h3>Recruiter note</h3>
+                <textarea value={selection.connection_note} onChange={(event) => updateSelection("connection_note", event.target.value)} maxLength={299} />
+              </section>
+            )}
+
+            {draft.cover_letter_text && (
+              <section className="tailoring-review-section">
+                <div className="tailoring-review-heading">
+                  <h3>Cover letter</h3>
+                  <Toggle label="Use" checked={selection.cover_letter_accepted} onChange={(checked) => updateSelection("cover_letter_accepted", checked)} />
+                </div>
+                <textarea className="cover-letter-editor" value={selection.cover_letter_text} onChange={(event) => updateSelection("cover_letter_text", event.target.value)} maxLength={4000} />
+              </section>
+            )}
+
+            <div className="tailoring-review-actions">
+              <button className="icon-button secondary" onClick={onRefresh} disabled={Boolean(busy)}>
+                {String(busy).startsWith("preview:") ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                <span>Refresh preview</span>
+              </button>
+              {!approved && (
+                <>
+                  <label className="tailoring-approval-note">
+                    <span>Approval note</span>
+                    <textarea value={approvalNote} onChange={(event) => onApprovalNoteChange(event.target.value)} placeholder="Record why this draft is ready." maxLength={1000} />
+                  </label>
+                  <button className="icon-button primary" onClick={onApprove} disabled={approvalNote.trim().length < 3 || Boolean(busy)}>
+                    {String(busy).startsWith("approve:") ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+                    <span>Approve draft</span>
+                  </button>
+                </>
+              )}
+            </div>
+
+            <details className="tailoring-revision-panel">
+              <summary>Revise with Claude</summary>
+              <TailoringPreferencesEditor value={preferences} onChange={onPreferencesChange} />
+              <label>
+                <span>Revision reason</span>
+                <textarea value={revisionReason} onChange={(event) => onRevisionReasonChange(event.target.value)} placeholder="What should be stronger, shorter, or differently emphasized?" maxLength={1000} />
+              </label>
+              <button className="icon-button primary" onClick={onRegenerate} disabled={revisionReason.trim().length < 3 || Boolean(busy)}>
+                {String(busy).startsWith("tailor:") ? <Loader2 className="spin" size={16} /> : <RotateCcw size={16} />}
+                <span>Regenerate draft</span>
+              </button>
+            </details>
+          </aside>
+        </div>
+      </section>
     </div>
   );
 }

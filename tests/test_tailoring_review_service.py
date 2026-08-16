@@ -10,6 +10,7 @@ from app.schemas.tailoring_review import (
     TailoringBulletDecision,
     TailoringDraftRequest,
     TailoringFinalizeRequest,
+    TailoringReviewSelection,
 )
 from app.services.application_packet_export_service import ApplicationPacketExportService
 from app.services.application_packet_service import ApplicationPacketService
@@ -108,6 +109,34 @@ def test_preview_creates_review_draft_without_resume_artifacts(tmp_path):
     assert not list(tmp_path.rglob("*.docx"))
     assert not list(tmp_path.rglob("*.pdf"))
     assert Path(tmp_path / "drafts" / f"{draft.draft_id}.json").exists()
+
+
+def test_approval_persists_review_without_rendering_resume_files(tmp_path):
+    service = _service(tmp_path)
+    draft = _draft(service)
+
+    approved = service.approve_draft(
+        TailoringReviewSelection(
+            draft_id=draft.draft_id,
+            summary_text=draft.summary_proposed,
+            bullets=[
+                TailoringBulletDecision(
+                    bullet_id=draft.bullets[0].bullet_id,
+                    accepted=True,
+                    text=draft.bullets[0].proposed,
+                )
+            ],
+            project_ids=[project.project_id for project in draft.projects],
+            publication_ids=[],
+        )
+    )
+
+    record = json.loads((tmp_path / "drafts" / f"{draft.draft_id}.json").read_text(encoding="utf-8"))
+    assert approved.message.startswith("Tailoring review approved")
+    assert record["approved_review"]["accepted_bullet_count"] == 1
+    assert not list(tmp_path.rglob("*.docx"))
+    assert not list(tmp_path.rglob("*.pdf"))
+    assert "draft_approved" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 
 def test_preview_honors_project_and_research_emphasis(tmp_path):

@@ -22,6 +22,7 @@ from app.schemas.tailoring_review import (
     TailoringFinalizeRequest,
     TailoringFinalizeResponse,
     TailoringPreviewRenderResponse,
+    TailoringReviewSelection,
 )
 from app.services.autofill_context_service import AutofillContextService
 from app.services.profile_evidence_service import ProfileEvidenceService
@@ -127,6 +128,10 @@ class TailoringReviewService:
             "connection_note": tailored.connection_note or "",
             "cover_letter_text": tailored.cover_letter_text or "",
             "changes_summary": tailored.changes_summary,
+            "engine": tailored.engine or type(self.context.tailorer).__name__,
+            "model": tailored.model,
+            "llm_usage": tailored.llm_usage,
+            "claude_call_consumed": tailored.claude_call_consumed,
             "finalized": {},
         }
         self._write_draft(record)
@@ -144,6 +149,43 @@ class TailoringReviewService:
             },
         )
         return self._draft_response(record)
+
+    def get_draft(self, draft_id: str) -> TailoringDraftResponse:
+        return self._draft_response(self._read_draft(draft_id))
+
+    def approve_draft(self, payload: TailoringReviewSelection) -> TailoringPreviewRenderResponse:
+        record = self._read_draft(payload.draft_id)
+        summary, rewritten = self._review_payload_parts(record, payload)
+        preview = self._build_resume_preview_html(
+            record,
+            summary=summary,
+            rewritten=rewritten,
+            project_ids=payload.project_ids,
+            publication_ids=payload.publication_ids,
+            bullet_counts=payload.bullet_counts,
+        )
+        record["approved_review"] = {
+            "approved_at": datetime.now(UTC).isoformat(),
+            "selection": payload.model_dump(),
+            "accepted_bullet_count": len(rewritten),
+        }
+        self._write_draft(record)
+        self._audit(
+            "draft_approved",
+            {
+                "draft_id": payload.draft_id,
+                "company": record["job"]["company"],
+                "role": record["job"]["role"],
+                "accepted_bullet_count": len(rewritten),
+                "project_ids": payload.project_ids,
+                "publication_ids": payload.publication_ids,
+            },
+        )
+        return TailoringPreviewRenderResponse(
+            draft_id=payload.draft_id,
+            resume_preview_html=preview,
+            message="Tailoring review approved. No resume files have been generated yet.",
+        )
 
     def finalize(self, payload: TailoringFinalizeRequest) -> TailoringFinalizeResponse:
         record = self._read_draft(payload.draft_id)
@@ -237,7 +279,7 @@ class TailoringReviewService:
             message="Final resume rendered locally. Use Download DOCX or Download PDF to choose a save location.",
         )
 
-    def render_preview(self, payload: TailoringFinalizeRequest) -> TailoringPreviewRenderResponse:
+    def render_preview(self, payload: TailoringReviewSelection) -> TailoringPreviewRenderResponse:
         record = self._read_draft(payload.draft_id)
         summary, rewritten = self._review_payload_parts(record, payload)
         return TailoringPreviewRenderResponse(
@@ -282,6 +324,10 @@ class TailoringReviewService:
             changes_summary=record.get("changes_summary", []),
             resume_preview_html=self._build_resume_preview_html(record),
             message="Claude draft is ready for review. No resume file has been generated yet.",
+            engine=record.get("engine", ""),
+            model=record.get("model", ""),
+            llm_usage=record.get("llm_usage", {}),
+            claude_call_consumed=bool(record.get("claude_call_consumed")),
         )
 
     def _draft_bullets(self, bullets: list[dict], master: dict) -> list[TailoringDraftBullet]:
@@ -356,7 +402,7 @@ class TailoringReviewService:
     def _review_payload_parts(
         self,
         record: dict[str, Any],
-        payload: TailoringFinalizeRequest,
+        payload: TailoringReviewSelection,
     ) -> tuple[str, list[dict[str, str]]]:
         known_bullets = {item["bullet_id"]: item for item in record.get("bullets", [])}
         decisions = {item.bullet_id: item for item in payload.bullets}
@@ -394,7 +440,7 @@ class TailoringReviewService:
         self._validate_edit(summary, record["summary_original"], max_length=1400)
         return summary, rewritten
 
-    def _cover_letter_for_finalize(self, record: dict[str, Any], payload: TailoringFinalizeRequest) -> str:
+    def _cover_letter_for_finalize(self, record: dict[str, Any], payload: TailoringReviewSelection) -> str:
         if not payload.cover_letter_accepted:
             return ""
         text = (payload.cover_letter_text.strip() or str(record.get("cover_letter_text") or "").strip())
