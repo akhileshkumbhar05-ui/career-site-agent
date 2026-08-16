@@ -8,6 +8,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.action === "CAREERSITE_INTAKE_REVIEW") {
+    postLocalJson("/application-loop/third-eye-intake/review", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (message?.action === "CAREERSITE_INTAKE_COMMIT") {
+    postLocalJson("/application-loop/third-eye-intake", message.payload || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
   if (message?.action === "CAREERSITE_TAILOR_PREVIEW") {
     postLocalJson("/autofill/tailoring/preview", message.payload || {})
       .then(sendResponse)
@@ -78,10 +92,11 @@ async function postJson(url, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(`Local CareerSite API returned HTTP ${response.status}`);
+    throw new Error(data.detail || `Local CareerSite API returned HTTP ${response.status}`);
   }
-  return response.json();
+  return data;
 }
 
 async function downloadLocalFile(path) {

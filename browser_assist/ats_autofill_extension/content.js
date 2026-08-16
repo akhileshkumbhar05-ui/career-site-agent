@@ -243,6 +243,8 @@
       </div>`;
 
     const jd = result.jd;
+    const capturedPageText = extractPageText();
+    const discoverySource = inferDiscoverySource(window.location.href);
     if (jd && (jd.role || jd.company)) {
       const reqs = (jd.key_requirements || []).slice(0, 4)
         .map((req) => `<li style="margin:0 0 2px;">${watcherEscape(req)}</li>`).join("");
@@ -252,6 +254,42 @@
           <div style="color:#b3b3b3;font-size:12px;">${watcherEscape(jd.company || "")}${jd.location ? " &middot; " + watcherEscape(jd.location) : ""}</div>
           ${jd.sponsorship_note ? `<div style="margin-top:6px;color:#f5c518;font-size:12px;">${watcherEscape(jd.sponsorship_note)}</div>` : ""}
           ${reqs ? `<ul style="margin:8px 0 0;padding-left:16px;color:#d6d6d6;font-size:12px;">${reqs}</ul>` : ""}
+          <button data-cs="intake-toggle" style="margin-top:10px;width:100%;border:0;border-radius:6px;padding:8px;background:#e50914;color:#fff;font-weight:700;cursor:pointer;">Review and add job</button>
+          <div data-cs="intake-options" hidden style="margin-top:8px;padding-top:9px;border-top:1px solid rgba(255,255,255,.12);">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
+              <label style="display:block;color:#b3b3b3;font-size:11px;">Company
+                <input data-cs-intake="company" value="${watcherEscape(jd.company || "")}" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+              </label>
+              <label style="display:block;color:#b3b3b3;font-size:11px;">Role
+                <input data-cs-intake="role" value="${watcherEscape(jd.role || "")}" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+              </label>
+            </div>
+            <label style="display:block;margin-top:7px;color:#b3b3b3;font-size:11px;">Discovery source
+              <select data-cs-intake="source" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+                ${intakeSourceOptions(discoverySource)}
+              </select>
+            </label>
+            <label style="display:block;margin-top:7px;color:#b3b3b3;font-size:11px;">Job URL
+              <input data-cs-intake="job_url" value="${watcherEscape(window.location.href)}" style="display:block;width:100%;margin-top:3px;padding:6px;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;box-sizing:border-box;">
+            </label>
+            <label style="display:block;margin-top:7px;color:#b3b3b3;font-size:11px;">Job description
+              <textarea data-cs-intake="jd_text" rows="5" maxlength="100000" style="display:block;width:100%;margin-top:3px;padding:6px;resize:vertical;border-radius:5px;border:1px solid #555;background:#262626;color:#fff;font:11px/1.4 Arial,sans-serif;box-sizing:border-box;"></textarea>
+            </label>
+            <div style="margin-top:8px;color:#b3b3b3;font-size:11px;">Destination</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
+              <label style="display:flex;align-items:center;gap:6px;padding:7px;border:1px solid #555;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">
+                <input data-cs-destination="active_sprint" name="careersite-intake-destination" type="radio" value="active_sprint" checked> Active sprint
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;padding:7px;border:1px solid #555;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;">
+                <input data-cs-destination="inbox" name="careersite-intake-destination" type="radio" value="inbox"> Batch Inbox
+              </label>
+            </div>
+            <div data-cs="intake-review-status" style="margin-top:7px;color:#b3b3b3;font-size:11px;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:6px;margin-top:8px;">
+              <button data-cs="intake-review" style="border:1px solid #666;border-radius:6px;padding:7px;background:#303030;color:#fff;font-weight:700;cursor:pointer;">Check details</button>
+              <button data-cs="intake-commit" disabled style="border:0;border-radius:6px;padding:7px;background:#e50914;color:#fff;font-weight:700;cursor:pointer;">Add to active sprint</button>
+            </div>
+          </div>
           <button data-cs="tailor-toggle" style="margin-top:10px;width:100%;border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:8px;background:#303030;color:#fff;font-weight:700;cursor:pointer;">Choose tailoring style</button>
           <div data-cs="tailor-options" hidden style="margin-top:8px;padding:9px;background:#191919;border:1px solid rgba(255,255,255,.1);border-radius:7px;">
             <label style="display:block;color:#b3b3b3;font-size:11px;margin-bottom:7px;">
@@ -332,12 +370,35 @@
 
     html += `<div style="color:#808080;font-size:10.5px;margin-top:4px;">Suggestions only. Sensitive fields and final submit stay with you.</div>`;
     panel.innerHTML = html;
+    const intakeJd = panel.querySelector('[data-cs-intake="jd_text"]');
+    if (intakeJd) intakeJd.value = capturedPageText;
 
     panel.querySelector('[data-cs="close"]')?.addEventListener("click", () => panel.remove());
     panel.querySelector('[data-cs="fill"]')?.addEventListener("click", () => {
       const filled = applyWatcherSuggestions(fillable, false);
       const status = panel.querySelector('[data-cs="fill-status"]');
       if (status) status.textContent = `Filled ${filled} field${filled === 1 ? "" : "s"}. Review before submitting.`;
+    });
+    panel.querySelector('[data-cs="intake-toggle"]')?.addEventListener("click", async () => {
+      const options = panel.querySelector('[data-cs="intake-options"]');
+      const toggle = panel.querySelector('[data-cs="intake-toggle"]');
+      if (!options || !toggle) return;
+      options.hidden = !options.hidden;
+      toggle.textContent = options.hidden ? "Review and add job" : "Hide job intake";
+      if (!options.hidden) await reviewThirdEyeIntake(panel);
+    });
+    panel.querySelector('[data-cs="intake-review"]')?.addEventListener("click", async () => {
+      await reviewThirdEyeIntake(panel);
+    });
+    panel.querySelector('[data-cs="intake-commit"]')?.addEventListener("click", async () => {
+      await commitThirdEyeIntake(panel);
+    });
+    panel.querySelectorAll("[data-cs-intake]").forEach((input) => {
+      input.addEventListener("input", () => invalidateIntakeReview(panel));
+      input.addEventListener("change", () => invalidateIntakeReview(panel));
+    });
+    panel.querySelectorAll("[data-cs-destination]").forEach((input) => {
+      input.addEventListener("change", () => updateIntakeCommitButton(panel));
     });
     panel.querySelector('[data-cs="tailor-toggle"]')?.addEventListener("click", () => {
       const options = panel.querySelector('[data-cs="tailor-options"]');
@@ -408,6 +469,161 @@
           })),
         },
       });
+    }
+  }
+
+  function inferDiscoverySource(url) {
+    const value = decodeURIComponent(String(url || "")).toLowerCase();
+    if (value.includes("jobright")) return "Jobright AI";
+    if (value.includes("linkedin.com")) return "LinkedIn";
+    if (value.includes("indeed.com")) return "Indeed";
+    if (value.includes("simplify.jobs")) return "Simplify";
+    return "Company Website";
+  }
+
+  function intakeSourceOptions(selected) {
+    const sources = [
+      "Jobright AI", "LinkedIn", "Indeed", "Company Website", "Referral",
+      "Simplify", "TikTok", "Cognizant", "Unknown",
+    ];
+    return sources.map((source) => (
+      `<option value="${watcherEscape(source)}"${source === selected ? " selected" : ""}>${watcherEscape(source)}</option>`
+    )).join("");
+  }
+
+  function readThirdEyeIntake(panel) {
+    const value = (key) => (panel.querySelector(`[data-cs-intake="${key}"]`)?.value || "").trim();
+    return {
+      company: value("company"),
+      role: value("role"),
+      job_url: value("job_url"),
+      jd_text: value("jd_text"),
+      source: value("source") || "Unknown",
+    };
+  }
+
+  async function reviewThirdEyeIntake(panel) {
+    const status = panel.querySelector('[data-cs="intake-review-status"]');
+    const reviewButton = panel.querySelector('[data-cs="intake-review"]');
+    const commitButton = panel.querySelector('[data-cs="intake-commit"]');
+    panel.dataset.csIntakeReviewed = "false";
+    if (status) {
+      status.style.color = "#b3b3b3";
+      status.textContent = "Checking the canonical link, duplicate history, and sprint capacity...";
+    }
+    if (reviewButton) reviewButton.disabled = true;
+    if (commitButton) commitButton.disabled = true;
+
+    const response = await sendRuntimeMessage({
+      action: "CAREERSITE_INTAKE_REVIEW",
+      payload: readThirdEyeIntake(panel),
+    });
+    if (reviewButton) reviewButton.disabled = false;
+    if (response?.error || !response?.valid) {
+      if (status) {
+        status.style.color = "#f5c518";
+        status.textContent = response?.error
+          ? `Could not check this job: ${friendlyRuntimeError(response.error)}`
+          : response?.reason || "Company and role are required before this job can be added.";
+      }
+      return;
+    }
+
+    const normalized = response.normalized_item || {};
+    for (const key of ["company", "role", "job_url", "jd_text", "source"]) {
+      const input = panel.querySelector(`[data-cs-intake="${key}"]`);
+      if (input && normalized[key] != null) input.value = normalized[key];
+    }
+
+    const activeSprint = panel.querySelector('[data-cs-destination="active_sprint"]');
+    const inbox = panel.querySelector('[data-cs-destination="inbox"]');
+    const canUseSprint = Boolean(response.sprint?.accepts_items || response.already_in_current_sprint);
+    if (activeSprint) activeSprint.disabled = !canUseSprint;
+    const destination = response.recommended_destination === "active_sprint" && canUseSprint
+      ? activeSprint
+      : inbox;
+    if (destination) destination.checked = true;
+
+    let message = "Ready to add to the Batch Inbox.";
+    if (response.already_in_current_sprint) {
+      message = `Already in ${response.sprint.name}.`;
+    } else if (response.existing_loop_item && response.sprint?.accepts_items) {
+      message = `${response.duplicate_reason} It can still be added to ${response.sprint.name}.`;
+    } else if (response.existing_loop_item) {
+      message = response.duplicate_reason || "This job is already in the Batch Inbox.";
+    } else if (response.sprint?.accepts_items) {
+      message = `${response.sprint.name}: ${response.sprint.open_slots} open slot${response.sprint.open_slots === 1 ? "" : "s"}.`;
+    } else if (response.sprint?.status === "completed") {
+      message = `${response.sprint.name} is complete. This job will go to the Batch Inbox.`;
+    } else if (response.sprint) {
+      message = `${response.sprint.name} has no open slots. This job will go to the Batch Inbox.`;
+    }
+    if (response.canonical_job_url && response.canonical_job_url !== normalized.job_url) {
+      message += " Tracking parameters will be removed from the saved URL.";
+    }
+    if (status) {
+      status.style.color = response.already_in_current_sprint ? "#f5c518" : "#b7e4c7";
+      status.textContent = `${message} No Claude call.`;
+    }
+    panel.dataset.csIntakeReviewed = "true";
+    panel.dataset.csIntakeAlreadyInSprint = response.already_in_current_sprint ? "true" : "false";
+    updateIntakeCommitButton(panel);
+  }
+
+  function invalidateIntakeReview(panel) {
+    if (panel.dataset.csIntakeReviewed !== "true") return;
+    panel.dataset.csIntakeReviewed = "false";
+    panel.dataset.csIntakeAlreadyInSprint = "false";
+    const commitButton = panel.querySelector('[data-cs="intake-commit"]');
+    const status = panel.querySelector('[data-cs="intake-review-status"]');
+    if (commitButton) commitButton.disabled = true;
+    if (status) {
+      status.style.color = "#f5c518";
+      status.textContent = "Details changed. Check them again before adding.";
+    }
+  }
+
+  function updateIntakeCommitButton(panel) {
+    const button = panel.querySelector('[data-cs="intake-commit"]');
+    if (!button) return;
+    const destination = panel.querySelector('[data-cs-destination]:checked')?.value || "inbox";
+    const alreadyInSprint = panel.dataset.csIntakeAlreadyInSprint === "true";
+    button.textContent = alreadyInSprint
+      ? "Already in active sprint"
+      : destination === "active_sprint" ? "Add to active sprint" : "Add to Batch Inbox";
+    button.disabled = panel.dataset.csIntakeReviewed !== "true" || alreadyInSprint;
+  }
+
+  async function commitThirdEyeIntake(panel) {
+    if (panel.dataset.csIntakeReviewed !== "true") return;
+    const status = panel.querySelector('[data-cs="intake-review-status"]');
+    const button = panel.querySelector('[data-cs="intake-commit"]');
+    const destination = panel.querySelector('[data-cs-destination]:checked')?.value || "inbox";
+    if (button) button.disabled = true;
+    if (status) {
+      status.style.color = "#b3b3b3";
+      status.textContent = "Adding the reviewed job...";
+    }
+    const response = await sendRuntimeMessage({
+      action: "CAREERSITE_INTAKE_COMMIT",
+      payload: { ...readThirdEyeIntake(panel), destination },
+    });
+    if (response?.error) {
+      if (button) button.disabled = false;
+      if (status) {
+        status.style.color = "#f5c518";
+        status.textContent = `Could not add this job: ${friendlyRuntimeError(response.error)}`;
+      }
+      return;
+    }
+    panel.dataset.csIntakeReviewed = "false";
+    if (button) {
+      button.disabled = true;
+      button.textContent = response.action === "added_to_sprint" ? "Added to sprint" : "Saved in Batch Inbox";
+    }
+    if (status) {
+      status.style.color = response.action.startsWith("duplicate") ? "#f5c518" : "#b7e4c7";
+      status.textContent = `${response.message} No Claude call.`;
     }
   }
 

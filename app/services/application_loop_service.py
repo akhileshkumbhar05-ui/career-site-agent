@@ -24,6 +24,7 @@ from app.schemas.application_loop import (
     ApplicationLoopATSOutcomeResponse,
     ApplicationLoopATSReviewItem,
     ApplicationLoopBatchImportRequest,
+    ApplicationLoopBatchItemReview,
     ApplicationLoopBatchItemRequest,
     ApplicationLoopBatchOutcome,
     ApplicationLoopBatchResponse,
@@ -325,6 +326,37 @@ class ApplicationLoopService:
             created_at=created_at,
             summary=summary,
             outcomes=outcomes,
+        )
+
+    def review_batch_item(self, raw_item: ApplicationLoopBatchItemRequest) -> ApplicationLoopBatchItemReview:
+        normalized, error = self._normalize_batch_item(raw_item)
+        if error:
+            return ApplicationLoopBatchItemReview(valid=False, reason=error)
+
+        company, role, job_url, canonical_url, jd_text, source = normalized
+        conn = get_db_connection()
+        try:
+            duplicate_row, duplicate_reason = self._find_duplicate(
+                conn,
+                canonical_url=canonical_url,
+                company=company,
+                role=role,
+            )
+        finally:
+            conn.close()
+
+        return ApplicationLoopBatchItemReview(
+            valid=True,
+            normalized_item=ApplicationLoopBatchItemRequest(
+                company=company,
+                role=role,
+                job_url=job_url,
+                jd_text=jd_text,
+                source=source,
+            ),
+            canonical_job_url=canonical_url,
+            duplicate_reason=duplicate_reason,
+            existing_loop_item=self._row_to_item(duplicate_row) if duplicate_row is not None else None,
         )
 
     def list_items(self, *, limit: int = 100) -> list[ApplicationLoopItem]:

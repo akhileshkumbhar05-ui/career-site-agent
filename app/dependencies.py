@@ -33,6 +33,7 @@ from app.services.tailoring_service import TailoringService
 from app.services.tailoring_review_service import TailoringReviewService
 from app.services.tracker_service import TrackerService
 from app.services.pipeline_service import PipelineService
+from app.services.third_eye_intake_service import ThirdEyeIntakeService
 
 
 @lru_cache
@@ -93,6 +94,14 @@ def get_application_loop_service() -> ApplicationLoopService:
 @lru_cache
 def get_application_sprint_service() -> ApplicationSprintService:
     return ApplicationSprintService(loop_service=get_application_loop_service())
+
+
+@lru_cache
+def get_third_eye_intake_service() -> ThirdEyeIntakeService:
+    return ThirdEyeIntakeService(
+        loop_service=get_application_loop_service(),
+        sprint_service=get_application_sprint_service(),
+    )
 
 
 @lru_cache

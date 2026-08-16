@@ -12,6 +12,7 @@ On any page it looks at, the watcher continuously (SPA-aware) sends the page tex
 
 A "Third Eye" panel appears top-right showing the understood JD and the suggested fills. Two buttons:
 
+- **Review and add job** — opens editable company, role, discovery source, URL, and full-JD fields; checks the canonical link and company-plus-role duplicate keys; then adds the confirmed capture to the current sprint or Batch Inbox. Review and capture use no Claude calls.
 - **Fill safe fields** — applies the suggested safe fills to the page. Fill-on-click only.
 - **Choose tailoring style** — lets you direct Claude before generating the draft. Choose balanced, technical depth, business impact, projects first, experience first, or minimal edits; set rewrite strength; choose section emphasis including Research papers; type bullet counts per subsection for Experience roles, Projects, and Research papers; and add a short custom instruction.
 - **Create tailored draft** — spends one Claude call and opens an editable review inside Third Eye. It does not create resume files yet.

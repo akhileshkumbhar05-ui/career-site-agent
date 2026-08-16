@@ -327,6 +327,61 @@ class ApplicationLoopBatchResponse(BaseModel):
     outcomes: list[ApplicationLoopBatchOutcome]
 
 
+class ApplicationLoopBatchItemReview(BaseModel):
+    valid: bool
+    reason: str = ""
+    normalized_item: ApplicationLoopBatchItemRequest | None = None
+    canonical_job_url: str = ""
+    duplicate_reason: str = ""
+    existing_loop_item: ApplicationLoopItem | None = None
+
+
+ThirdEyeIntakeDestination = Literal["active_sprint", "inbox"]
+ThirdEyeIntakeAction = Literal[
+    "added_to_sprint",
+    "added_to_inbox",
+    "duplicate_in_sprint",
+    "duplicate_inbox",
+]
+
+
+class ThirdEyeIntakeRequest(ApplicationLoopBatchItemRequest):
+    destination: ThirdEyeIntakeDestination = "active_sprint"
+
+
+class ThirdEyeSprintContext(BaseModel):
+    sprint_id: str
+    name: str
+    status: Literal["active", "paused", "completed"]
+    open_slots: int = Field(ge=0)
+    target_count: int = Field(ge=1, le=10)
+    active_job_count: int = Field(ge=0)
+    accepts_items: bool
+
+
+class ThirdEyeIntakeReviewResponse(BaseModel):
+    valid: bool
+    reason: str = ""
+    normalized_item: ApplicationLoopBatchItemRequest | None = None
+    canonical_job_url: str = ""
+    duplicate_reason: str = ""
+    existing_loop_item: ApplicationLoopItem | None = None
+    already_in_current_sprint: bool = False
+    sprint: ThirdEyeSprintContext | None = None
+    recommended_destination: ThirdEyeIntakeDestination = "inbox"
+    claude_calls: int = 0
+
+
+class ThirdEyeIntakeResponse(BaseModel):
+    action: ThirdEyeIntakeAction
+    message: str
+    import_status: BatchImportStatus
+    duplicate_reason: str = ""
+    loop_item: ApplicationLoopItem
+    sprint: ThirdEyeSprintContext | None = None
+    claude_calls: int = 0
+
+
 class ApplicationLoopFitGateRunRequest(BaseModel):
     loop_ids: list[str] = Field(min_length=1, max_length=10)
     use_llm: bool = True

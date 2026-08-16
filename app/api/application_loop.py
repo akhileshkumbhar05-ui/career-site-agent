@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from app.dependencies import get_application_loop_service
+from app.dependencies import get_application_loop_service, get_third_eye_intake_service
 from app.schemas.application_loop import (
     ApplicationLoopATSArmRequest,
     ApplicationLoopATSAssistResponse,
     ApplicationLoopATSOutcomeRequest,
     ApplicationLoopATSOutcomeResponse,
     ApplicationLoopBatchImportRequest,
+    ApplicationLoopBatchItemRequest,
     ApplicationLoopBatchResponse,
     ApplicationLoopFitGateResponse,
     ApplicationLoopFitGateRunRequest,
@@ -29,9 +30,13 @@ from app.schemas.application_loop import (
     ApplicationLoopTailoringExportRequest,
     ApplicationLoopTailoringExportResponse,
     ApplicationLoopTailoringMemoryResponse,
+    ThirdEyeIntakeRequest,
+    ThirdEyeIntakeResponse,
+    ThirdEyeIntakeReviewResponse,
 )
 from app.schemas.tailoring_review import TailoringPreviewRenderResponse, TailoringReviewSelection
 from app.services.application_loop_service import ApplicationLoopService, InvalidApplicationLoopTransition
+from app.services.third_eye_intake_service import ThirdEyeIntakeService
 
 
 router = APIRouter()
@@ -43,6 +48,25 @@ def import_batch(
     service: ApplicationLoopService = Depends(get_application_loop_service),
 ) -> ApplicationLoopBatchResponse:
     return service.import_batch(payload)
+
+
+@router.post("/third-eye-intake/review", response_model=ThirdEyeIntakeReviewResponse)
+def review_third_eye_intake(
+    payload: ApplicationLoopBatchItemRequest,
+    service: ThirdEyeIntakeService = Depends(get_third_eye_intake_service),
+) -> ThirdEyeIntakeReviewResponse:
+    return service.review(payload)
+
+
+@router.post("/third-eye-intake", response_model=ThirdEyeIntakeResponse)
+def commit_third_eye_intake(
+    payload: ThirdEyeIntakeRequest,
+    service: ThirdEyeIntakeService = Depends(get_third_eye_intake_service),
+) -> ThirdEyeIntakeResponse:
+    try:
+        return service.commit(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/items", response_model=list[ApplicationLoopItem])

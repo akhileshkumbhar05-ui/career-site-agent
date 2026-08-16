@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CareerSite Third Eye Watcher",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Watches job/application pages, uses the local CareerSite API and Claude to tailor resumes, draft optional cover letters, and fill safe fields. Final submit stays manual.",
   "permissions": ["activeTab", "storage", "downloads", "tabs"],
   "host_permissions": ["<all_urls>"],
