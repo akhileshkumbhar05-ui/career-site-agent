@@ -11,7 +11,8 @@ export default defineConfig({
       "/health": "http://127.0.0.1:8000",
       "/autofill": "http://127.0.0.1:8000",
       "/agents": "http://127.0.0.1:8000",
-      "/application-loop": "http://127.0.0.1:8000"
+      "/application-loop": "http://127.0.0.1:8000",
+      "/application-sprints": "http://127.0.0.1:8000"
     }
   }
 });
