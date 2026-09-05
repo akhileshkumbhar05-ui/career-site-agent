@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -22,11 +25,26 @@ REQUIRED_WORKFLOWS = [
     "WF7_Career_Agent_Orchestrator.json",
 ]
 
+EXPECTED_ACTIVE_WORKFLOWS = [
+    "WF2_Incoming_Job_Lead_Processor",
+    "WF3_Confirmed_Application_To_Sheets",
+    "WF4_Gmail_Status_Monitor",
+    "WF5_Email_Backfill_Scanner",
+    "WF7_Career_Agent_Orchestrator",
+]
+
+APPS_SCRIPT_URL_PATTERN = re.compile(r"https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check local production readiness for CareerSite Agent.")
     parser.add_argument("--skip-http", action="store_true", help="Skip localhost FastAPI and n8n checks.")
     parser.add_argument("--skip-live-apps-script", action="store_true", help="Skip live Google Apps Script deployment check.")
+    parser.add_argument(
+        "--skip-live-n8n",
+        action="store_true",
+        help="Skip live n8n workflow, Apps Script endpoint, and recent trigger-log checks.",
+    )
     args = parser.parse_args()
 
     checks: list[tuple[str, str, str]] = []
@@ -55,6 +73,8 @@ def main() -> int:
     if not args.skip_http:
         checks.append(check_http_json("FastAPI health", "http://127.0.0.1:8000/health", expected_key="status"))
         checks.append(check_http("n8n UI", "http://127.0.0.1:5678"))
+        if not args.skip_live_n8n:
+            checks.extend(check_live_n8n())
 
     print_report(checks)
     return 1 if any(status == "FAIL" for status, _, _ in checks) else 0
@@ -397,6 +417,242 @@ def check_live_apps_script(env: dict[str, str]) -> tuple[str, str, str]:
     if not version_match or int(version_match.group(1)) < 16:
         return ("FAIL", "Live Apps Script deployment", f"{version}; deploy Code.gs v16 or newer")
     return ("PASS", "Live Apps Script deployment", f"{version}; {len(statuses)} live dropdown statuses")
+
+
+def check_live_n8n() -> list[tuple[str, str, str]]:
+    container, container_error = find_n8n_container()
+    if not container:
+        return [("WARN", "Live n8n workflow definitions", container_error or "Running n8n container not found")]
+
+    export_path = "/tmp/career-site-readiness-workflows.json"
+    exported = run_command(
+        ["docker", "exec", container, "n8n", "export:workflow", "--all", f"--output={export_path}"],
+        timeout=30,
+    )
+    if exported.returncode != 0:
+        return [("FAIL", "Live n8n workflow definitions", command_error(exported))]
+
+    captured = run_command(["docker", "exec", container, "cat", export_path], timeout=10)
+    if captured.returncode != 0:
+        return [("FAIL", "Live n8n workflow definitions", command_error(captured))]
+
+    try:
+        workflows = json.loads(captured.stdout)
+    except json.JSONDecodeError as exc:
+        return [("FAIL", "Live n8n workflow definitions", f"Invalid exported JSON: {exc}")]
+
+    checks = inspect_live_n8n_workflows(workflows)
+    checks.extend(check_live_n8n_apps_script_endpoints(workflows))
+    checks.append(check_recent_gmail_trigger_errors(container))
+    return checks
+
+
+def find_n8n_container() -> tuple[str | None, str | None]:
+    configured = os.environ.get("N8N_CONTAINER_NAME", "").strip()
+    listed = run_command(["docker", "ps", "--format", "{{.Names}}\t{{.Image}}"], timeout=10)
+    if listed.returncode != 0:
+        return None, f"Docker unavailable: {command_error(listed)}"
+
+    containers: list[tuple[str, str]] = []
+    for line in listed.stdout.splitlines():
+        name, _, image = line.partition("\t")
+        if name:
+            containers.append((name.strip(), image.strip()))
+
+    if configured:
+        if any(name == configured for name, _ in containers):
+            return configured, None
+        return None, f"Configured n8n container is not running: {configured}"
+
+    candidates = [name for name, image in containers if "n8n" in name.lower() or "n8n" in image.lower()]
+    if not candidates:
+        return None, "No running n8n Docker container found"
+    if "n8n-n8n-1" in candidates:
+        return "n8n-n8n-1", None
+    return candidates[0], None
+
+
+def inspect_live_n8n_workflows(workflows: object) -> list[tuple[str, str, str]]:
+    if not isinstance(workflows, list):
+        return [("FAIL", "Live n8n workflow definitions", "Expected an exported workflow list")]
+
+    checks: list[tuple[str, str, str]] = []
+    active_by_name: dict[str, list[dict]] = {}
+    for workflow in workflows:
+        if not isinstance(workflow, dict) or not workflow.get("active"):
+            continue
+        active_by_name.setdefault(str(workflow.get("name", "")), []).append(workflow)
+
+    missing = [name for name in EXPECTED_ACTIVE_WORKFLOWS if not active_by_name.get(name)]
+    duplicate = [name for name in EXPECTED_ACTIVE_WORKFLOWS if len(active_by_name.get(name, [])) > 1]
+    if missing or duplicate:
+        details = []
+        if missing:
+            details.append(f"missing/inactive: {', '.join(missing)}")
+        if duplicate:
+            details.append(f"multiple active copies: {', '.join(duplicate)}")
+        checks.append(("FAIL", "Live n8n workflow activation", "; ".join(details)))
+    else:
+        checks.append(("PASS", "Live n8n workflow activation", f"{len(EXPECTED_ACTIVE_WORKFLOWS)} expected workflows active"))
+
+    wf7_live = (active_by_name.get("WF7_Career_Agent_Orchestrator") or [None])[0]
+    wf7_path = WORKFLOW_DIR / "WF7_Career_Agent_Orchestrator.json"
+    try:
+        wf7_repo = json.loads(wf7_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        checks.append(("FAIL", "Live WF7 protected parameters", f"Cannot read repo WF7: {exc}"))
+        return checks
+
+    if wf7_live is None:
+        checks.append(("FAIL", "Live WF7 protected parameters", "Active WF7 not found"))
+        return checks
+
+    comparisons = [
+        ("Run Career Agent Pipeline", "jsonBody"),
+        ("Build Agent Run Summary", "jsCode"),
+    ]
+    mismatches: list[str] = []
+    for node_name, parameter_name in comparisons:
+        live_node = find_node(wf7_live, node_name)
+        repo_node = find_node(wf7_repo, node_name)
+        if not live_node or not repo_node:
+            mismatches.append(f"missing node {node_name}")
+            continue
+        live_value = (live_node.get("parameters") or {}).get(parameter_name)
+        repo_value = (repo_node.get("parameters") or {}).get(parameter_name)
+        if live_value != repo_value:
+            mismatches.append(f"{node_name}.{parameter_name}")
+
+    if mismatches:
+        checks.append(("FAIL", "Live WF7 protected parameters", f"Mismatch: {', '.join(mismatches)}"))
+    else:
+        checks.append(("PASS", "Live WF7 protected parameters", "Pipeline body and Discord summary match the repo"))
+    return checks
+
+
+def check_live_n8n_apps_script_endpoints(workflows: object) -> list[tuple[str, str, str]]:
+    if not isinstance(workflows, list):
+        return []
+
+    owners: dict[str, set[str]] = {}
+    for workflow in workflows:
+        if not isinstance(workflow, dict) or not workflow.get("active"):
+            continue
+        name = str(workflow.get("name", "unnamed"))
+        for url in extract_apps_script_urls(workflow):
+            owners.setdefault(url, set()).add(name)
+
+    if not owners:
+        return [("WARN", "Live n8n Apps Script endpoints", "No direct Apps Script URLs found in active workflows")]
+
+    expected_version = source_script_version()
+    expected_statuses = expected_status_values()
+    checks: list[tuple[str, str, str]] = []
+    for url, workflow_names in sorted(owners.items(), key=lambda item: endpoint_fingerprint(item[0])):
+        label = f"Live n8n Apps Script {endpoint_fingerprint(url)}"
+        owner_detail = ", ".join(sorted(workflow_names))
+        checks.append(check_apps_script_endpoint(label, url, expected_version, expected_statuses, owner_detail))
+    return checks
+
+
+def check_apps_script_endpoint(
+    label: str,
+    url: str,
+    expected_version: str,
+    expected_statuses: list[str],
+    owner_detail: str,
+) -> tuple[str, str, str]:
+    separator = "&" if "?" in url else "?"
+    probe_url = f"{url}{separator}target=status_options&readiness={time.time_ns()}"
+    try:
+        with urllib.request.urlopen(probe_url, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        return ("FAIL", label, f"{owner_detail}; request failed: {exc.reason}")
+    except Exception as exc:
+        return ("FAIL", label, f"{owner_detail}; invalid response: {exc}")
+
+    version = str(payload.get("script_version", "unknown"))
+    if version_number(version) < version_number(expected_version):
+        return ("FAIL", label, f"{owner_detail}; serves {version}, expected {expected_version} or newer")
+
+    statuses = payload.get("status_options") or []
+    missing = [status for status in expected_statuses if status not in statuses]
+    extra = [status for status in statuses if status not in expected_statuses]
+    if missing:
+        return ("FAIL", label, f"{owner_detail}; missing controlled statuses: {', '.join(missing)}")
+    if extra:
+        return ("WARN", label, f"{owner_detail}; {version}; unexpected statuses: {', '.join(extra)}")
+    return ("PASS", label, f"{owner_detail}; {version}; {len(statuses)} controlled statuses")
+
+
+def check_recent_gmail_trigger_errors(container: str) -> tuple[str, str, str]:
+    logs = run_command(["docker", "logs", "--since", "6m", container], timeout=10)
+    if logs.returncode != 0:
+        return ("WARN", "Recent Gmail Trigger polling", command_error(logs))
+    combined = f"{logs.stdout}\n{logs.stderr}"
+    failures = len(re.findall(r"problem in ['\"]Gmail Trigger['\"]", combined, flags=re.IGNORECASE))
+    if failures:
+        return ("FAIL", "Recent Gmail Trigger polling", f"{failures} error(s) in the last 6 minutes")
+    return ("PASS", "Recent Gmail Trigger polling", "No errors in the last 6 minutes")
+
+
+def extract_apps_script_urls(workflow: dict) -> set[str]:
+    serialized = json.dumps(workflow.get("nodes", []), ensure_ascii=True)
+    return set(APPS_SCRIPT_URL_PATTERN.findall(serialized))
+
+
+def find_node(workflow: dict, name: str) -> dict | None:
+    return next((node for node in workflow.get("nodes", []) if node.get("name") == name), None)
+
+
+def source_script_version() -> str:
+    source = (ROOT_DIR / "google_cloud" / "Code.gs").read_text(encoding="utf-8")
+    match = re.search(r'const SCRIPT_VERSION = "([^"]+)"', source)
+    return match.group(1) if match else "v0"
+
+
+def expected_status_values() -> list[str]:
+    path = ROOT_DIR / "data" / "email_status_rules.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return [str(value) for value in payload.get("status_options", [])]
+
+
+def version_number(value: str) -> int:
+    match = re.fullmatch(r"v(\d+)", value)
+    return int(match.group(1)) if match else -1
+
+
+def endpoint_fingerprint(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+
+
+def run_command(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    except FileNotFoundError as exc:
+        return subprocess.CompletedProcess(command, 127, "", str(exc))
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            command,
+            124,
+            decode_command_output(exc.stdout),
+            decode_command_output(exc.stderr) or "Command timed out",
+        )
+
+
+def command_error(result: subprocess.CompletedProcess[str]) -> str:
+    detail = decode_command_output(result.stderr or result.stdout or f"exit {result.returncode}").strip()
+    return re.sub(r"\s+", " ", detail)[:180]
+
+
+def decode_command_output(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
 
 
 def check_file(name: str, path: Path) -> tuple[str, str, str]:

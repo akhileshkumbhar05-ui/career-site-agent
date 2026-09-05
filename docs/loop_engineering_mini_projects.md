@@ -434,6 +434,72 @@ Likely files:
 - `frontend/src/styles.css`
 - `tests/test_application_tailoring_loop.py`
 
+### 11. Third Eye Intake Bridge
+
+Status: shipped.
+
+User payoff:
+- Capture the job currently visible in Third Eye and place it into the active sprint or Batch Inbox without retyping it.
+
+Loop pattern:
+- Review, normalize, dedupe, then commit.
+
+Implemented behavior:
+- Review is read-only and reports validation, duplicate state, sprint capacity, and the recommended destination.
+- Commit creates one normalized application-loop item only after the user chooses the destination.
+- Canonical link dedupe runs before company plus role dedupe.
+- An open sprint receives the item only when it has capacity; otherwise intake falls back to the inbox.
+- Intake performs no fit-scoring, tailoring, Sheets write, or model call.
+
+Endpoints:
+- `POST /application-loop/third-eye-intake/review`
+- `POST /application-loop/third-eye-intake`
+
+### 12. Ten-Job Sprint Controller
+
+Status: shipped.
+
+User payoff:
+- Work through one bounded application batch with a single current action and visible replacement capacity.
+
+Loop pattern:
+- Bounded work-in-progress with explicit pause, resume, and completion gates.
+
+Implemented behavior:
+- One active sprint owns up to the chosen target count and derives the next action from each item's persisted state.
+- Skipped jobs reopen capacity without erasing sprint history.
+- Paused time is excluded from elapsed-time metrics.
+- Completion requires the target number of human-confirmed submissions; recruiter outreach is then unlocked.
+- A new sprint remains blocked until the completed sprint's outreach handoff is closed.
+
+Endpoints:
+- `POST /application-sprints`
+- `GET /application-sprints/current`
+- `POST /application-sprints/{sprint_id}/items`
+- `POST /application-sprints/{sprint_id}/pause`
+- `POST /application-sprints/{sprint_id}/resume`
+
+### 13. Third Eye Closeout Loop
+
+Status: shipped.
+
+User payoff:
+- Finish the current ATS attempt from Third Eye, record either a confirmed submission or a portal issue, and advance the sprint.
+
+Loop pattern:
+- Review, human confirmation, side effect, and retryable completion.
+
+Implemented behavior:
+- Review resolves the application by explicit loop id, autofill task, current sprint item, or one unambiguous open ATS item.
+- `submitted_confirmed` requires the explicit human-submission flag before an `Applied` row can be written.
+- Portal failures use the exact controlled status `Not Yet Applied Due to Technical Issue` and never mark the job Applied.
+- Failed Sheets writes leave the confirmed state retryable instead of silently advancing to `sheet_logged`.
+- Successful closeout updates sprint counts and surfaces the next current job.
+
+Endpoints:
+- `POST /application-loop/third-eye-closeout/review`
+- `POST /application-loop/third-eye-closeout`
+
 ## Recommended Build Order
 
 For the next working session, ship in this order:

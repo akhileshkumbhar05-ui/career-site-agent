@@ -110,10 +110,23 @@ Expected result:
 - No failures
 - Warnings are acceptable only if they are intentional, such as Discord being pasted directly in n8n instead of stored in `.env`
 
+With Docker running, the readiness command exports the live n8n definitions read-only and verifies:
+
+- WF2, WF3, WF4, WF5, and WF7 are active.
+- WF7's pipeline body and Discord summary code match the repository export.
+- Direct Apps Script endpoints used by active workflows serve the current script version and all controlled statuses.
+- The Gmail Trigger has no polling errors in the previous six minutes.
+
+Live endpoint URLs are never printed; the report uses short SHA-256 fingerprints. Use
+`--skip-live-n8n` only when intentionally checking a machine without the local n8n container.
+
 ## Daily Workflow
 
 1. Start Docker Desktop.
-2. Confirm n8n is running at `http://127.0.0.1:5678`.
+2. Confirm n8n is running at `http://localhost:5678`.
+
+Always use `localhost` for the n8n editor. Its Google OAuth callback is also on `localhost`; opening
+the editor on `127.0.0.1` creates a separate cookie scope and makes the OAuth popup return `Unauthorized`.
 3. Start FastAPI for the React app:
 
 ```powershell

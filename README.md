@@ -136,6 +136,10 @@ Production readiness check:
 python scripts/check_production_readiness.py
 ```
 
+When the local n8n Docker container is running, this check also verifies the expected active workflows,
+WF7's protected pipeline parameters, every Apps Script endpoint used by active workflows, and recent
+Gmail Trigger health. Endpoint URLs are represented only by short SHA-256 fingerprints in the report.
+
 Daily production process:
 - `docs/production_runbook.md`
 
